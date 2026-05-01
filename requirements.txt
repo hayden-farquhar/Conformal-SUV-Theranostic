@@ -1,0 +1,31 @@
+# Curated runtime dependencies for the conformal SUV theranostic analysis.
+# Versions pinned to the workstation environment that produced the locked
+# Phase 3 freeze artefacts on OSF j5ry4 (2026-04-30).
+#
+# For exact-bit reproducibility, also see requirements-frozen.txt
+# (full pip-freeze of the workstation, 184 packages including transitive deps).
+
+# Core numerics and tabular
+numpy==2.4.3
+pandas==2.2.3
+pyarrow==23.0.1
+scipy==1.17.1
+
+# Machine learning
+lightgbm==4.6.0
+scikit-learn==1.8.0
+
+# Medical imaging I/O
+SimpleITK==2.4.0
+pydicom==3.0.2
+nibabel==5.3.0
+
+# Plotting
+matplotlib==3.10.8
+seaborn==0.13.2
+
+# Configuration
+PyYAML==6.0.2
+
+# Testing
+pytest==8.3.4

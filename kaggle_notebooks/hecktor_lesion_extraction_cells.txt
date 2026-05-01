@@ -1,0 +1,404 @@
+================================================================================
+HECKTOR P79 lesion-extraction cells (Amendment 8 implementation, 2026-04-30)
+
+Pre-reg: https://doi.org/10.17605/OSF.IO/4KAZN
+Amendment 8: osf/amendment_log.md (OSF j5ry4 amendment_log.md v9, SHA 2ad1c920...)
+
+Outputs:
+  - data/interim/lesion_tables/hecktor_lesions.parquet
+  - data/interim/hecktor_extraction_log.csv (per-patient runtime + retention)
+  - data/interim/hecktor_freeze_metadata.json (cohort SHA-256 + reference)
+
+Architecture:
+  Local: code (already in p79_code.zip), Amendment 8 in osf/amendment_log.md
+  Drive: HECKTOR 2025 zip at /MyDrive/HECKTOR 2025/hecktor_2025_training_defaced.zip
+         (P80 acquired 2026-04-29; SHA 1abcf1d9...)
+  Colab: ephemeral runtime; pre-stages zip locally per P80 §1.5 pattern
+
+NOTE: P80's preprocessing produces 96^3 patches for FM probing; P79's downstream
+schema is per-lesion features. Same source data, independent OUTPUT artefacts
+on OSF. Per Amendment 8 §8b, lesion def = connected components on binary seg
+(GTVp ∪ GTVn merged), one row per ≥1 mL component, lesion_class via voxel-
+majority within each component.
+
+Cell sequence:
+  Cell 1: Mount Drive
+  Cell 2: Unzip the uploaded p79_code.zip into /content/p79
+          (re-build with: python3 scripts/build_colab_code_zip.py)
+  Cell 3: Install deps
+  Cell 4: Stage HECKTOR zip locally (~10-15 min, idempotent SHA-verified)
+  Cell 5: Read EHR cohort + sanity check
+  Cell 6: Extraction smoke test (--limit 3 patients)
+  Cell 7: Production extraction (~30-60 min for 680 patients)
+  Cell 8: Schema sanity + lock SHA-256 of output parquet
+  Cell 9: Stage outputs ready for pull-back
+================================================================================
+
+
+# ===== Cell 1: Mount Drive =====
+from google.colab import drive
+drive.mount('/content/drive')
+import os
+print('Drive mounted:', os.path.exists('/content/drive/MyDrive'))
+# After this cell: drag p79_code.zip from ~/Downloads into the Colab Files panel.
+
+
+# ===== Cell 2: Unzip uploaded code =====
+import os, sys, shutil, zipfile
+ZIP_PATH = '/content/p79_code.zip'
+COLAB_REPO = '/content/p79'
+assert os.path.exists(ZIP_PATH), 'Upload p79_code.zip via Files panel first'
+if os.path.exists(COLAB_REPO):
+    shutil.rmtree(COLAB_REPO)
+os.makedirs(COLAB_REPO, exist_ok=True)
+with zipfile.ZipFile(ZIP_PATH, 'r') as zf:
+    zf.extractall(COLAB_REPO)
+os.chdir(COLAB_REPO)
+sys.path.insert(0, COLAB_REPO)
+
+# Verify imports
+from src.preprocess.hecktor_lesions import extract_hecktor_lesions
+from src.preprocess.hecktor_vendor import lookup_centre, HECKTOR_CENTRE_VENDOR
+print('Imports OK.')
+print('HECKTOR centre lookup table (Amendment 8 §8d):')
+for cid, (name, vendor) in HECKTOR_CENTRE_VENDOR.items():
+    print(f'  centre_id={cid}  name={name:6s}  vendor={vendor}')
+
+
+# ===== Cell 3: Install dependencies =====
+!pip install --quiet SimpleITK pyarrow openpyxl
+
+
+# ===== Cell 4: Stage HECKTOR zip locally =====
+# Cribbed from P80 §1.5: Drive FUSE I/O is 5-10x slower than local SSD; pre-stage once
+# saves ~15-30 min on a 30-60 min extraction job. Idempotent + SHA-verified.
+
+import os, shutil, hashlib
+from pathlib import Path
+
+DRIVE_ZIP = Path('/content/drive/MyDrive/HECKTOR 2025/hecktor_2025_training_defaced.zip')
+LOCAL_ZIP = Path('/content/hecktor_2025_training_defaced.zip')
+EXPECTED_SHA = '1abcf1d9'  # P80 receipt; full hash logged in P80 PROGRESS.md
+
+assert DRIVE_ZIP.exists(), f'HECKTOR zip not on Drive at {DRIVE_ZIP}'
+
+def _file_sha256(p, chunk=2**20):
+    h = hashlib.sha256()
+    with open(p, 'rb') as f:
+        for buf in iter(lambda: f.read(chunk), b''):
+            h.update(buf)
+    return h.hexdigest()
+
+def stage_zip_locally():
+    if LOCAL_ZIP.exists():
+        sha = _file_sha256(LOCAL_ZIP)
+        if sha.startswith(EXPECTED_SHA):
+            print(f'Local zip exists and matches P80 receipt prefix {EXPECTED_SHA}; reusing')
+            return LOCAL_ZIP
+        print(f'Local zip exists but SHA {sha[:16]}... does NOT match {EXPECTED_SHA}; re-staging')
+        LOCAL_ZIP.unlink()
+    # Disk space check: HECKTOR zip is ~48 GB, need ~53 GB free
+    free_gb = shutil.disk_usage('/content').free / (1024**3)
+    print(f'Free space on /content: {free_gb:.1f} GB')
+    assert free_gb > 53, 'Need >53 GB free on /content for HECKTOR zip stage'
+    print(f'Copying {DRIVE_ZIP} -> {LOCAL_ZIP} (~10-15 min)...')
+    shutil.copy2(DRIVE_ZIP, LOCAL_ZIP)
+    sha = _file_sha256(LOCAL_ZIP)
+    print(f'Local zip SHA-256 (full): {sha}')
+    print(f'P80 receipt prefix: {EXPECTED_SHA}')
+    if not sha.startswith(EXPECTED_SHA):
+        print(f'WARNING: SHA does not match P80 receipt prefix; verify before proceeding')
+    return LOCAL_ZIP
+
+ZIP_PATH = stage_zip_locally()
+print(f'Using zip at: {ZIP_PATH}')
+
+
+# ===== Cell 5: EHR cohort enumeration =====
+# Reads HECKTOR_2025_Training_EHR_with_Data_Dictionary.xlsx from inside the zip
+# (no extraction); builds the cohort = patients with Task1=1 OR Task2=1.
+
+import zipfile
+import io
+import pandas as pd
+
+DATA_ROOT = 'HECKTOR 2025 Training Data Defaced ALL/'  # actual zip root (verified 2026-04-30)
+EHR_MEMBER = f'{DATA_ROOT}HECKTOR_2025_Training_EHR_with_Data_Dictionary.xlsx'
+
+with zipfile.ZipFile(ZIP_PATH) as zf:
+    with zf.open(EHR_MEMBER) as fp:
+        ehr = pd.read_excel(fp, sheet_name='Data')
+
+print(f'EHR rows: {len(ehr)}')
+print(f'EHR columns: {ehr.columns.tolist()}')
+
+# Cohort = Task1==1 OR Task2==1 (P80 schema)
+cohort = ehr[(ehr['Task 1'] == 1) | (ehr['Task 2'] == 1)].copy()
+cohort['task1_patient'] = (cohort['Task 1'] == 1).astype(bool)
+cohort['task2_patient'] = (cohort['Task 2'] == 1).astype(bool)
+print(f'Cohort (Task1 OR Task2): {len(cohort)} patients')
+print(f'Task1 patients: {cohort["task1_patient"].sum()}')
+print(f'Task2 patients: {cohort["task2_patient"].sum()}')
+
+# Centre breakdown
+print()
+print('Per-centre cohort breakdown:')
+print(cohort['CenterID'].value_counts().sort_index().to_string())
+
+# Spot-check that PT + SEG files exist for a few patients
+import zipfile
+with zipfile.ZipFile(ZIP_PATH) as zf:
+    names = set(zf.namelist())
+sample_pids = cohort['PatientID'].head(5).tolist()
+print()
+print('File-existence spot check (first 5 patients):')
+for pid in sample_pids:
+    pt = f'{DATA_ROOT}{pid}/{pid}__PT.nii.gz'
+    seg = f'{DATA_ROOT}{pid}/{pid}.nii.gz'
+    print(f'  {pid}: PT={pt in names}  SEG={seg in names}')
+
+
+# ===== Cell 6: Smoke test (3 patients, full pipeline) =====
+import time
+import numpy as np
+import SimpleITK as sitk
+import zipfile, io
+
+from src.preprocess.hecktor_lesions import extract_hecktor_lesions
+from src.preprocess.hecktor_vendor import lookup_centre
+
+
+def read_nifti_from_zip(zf, member_name):
+    """Read a NIfTI from zip without extracting to disk."""
+    with zf.open(member_name) as fp:
+        data = fp.read()
+    # SimpleITK needs a file path; write to /tmp briefly
+    tmp = f'/tmp/_hecktor_{hash(member_name) % 10**9}.nii.gz'
+    with open(tmp, 'wb') as f:
+        f.write(data)
+    img = sitk.ReadImage(tmp)
+    os.remove(tmp)
+    return img
+
+
+def resample_seg_to_pt(seg_img, pt_img):
+    """SEG -> PT grid via NN (P80 D4 finding: SEG and PT come on different grids)."""
+    rs = sitk.ResampleImageFilter()
+    rs.SetReferenceImage(pt_img)
+    rs.SetInterpolator(sitk.sitkNearestNeighbor)
+    rs.SetDefaultPixelValue(0)
+    return rs.Execute(seg_img)
+
+
+def process_patient(zf, pid, ehr_row):
+    pt_member  = f'{DATA_ROOT}{pid}/{pid}__PT.nii.gz'
+    seg_member = f'{DATA_ROOT}{pid}/{pid}.nii.gz'
+    pt_img = read_nifti_from_zip(zf, pt_member)
+    seg_img = read_nifti_from_zip(zf, seg_member)
+    seg_on_pt = resample_seg_to_pt(seg_img, pt_img)
+
+    suv = sitk.GetArrayFromImage(pt_img).astype(np.float32)        # (z, y, x)
+    seg = sitk.GetArrayFromImage(seg_on_pt).astype(np.uint8)
+    spacing_xyz = pt_img.GetSpacing()                               # (sx, sy, sz)
+    voxel_spacing_zyx = (float(spacing_xyz[2]), float(spacing_xyz[1]), float(spacing_xyz[0]))
+
+    centre_id = ehr_row.get('CenterID')
+    centre_name, vendor = lookup_centre(centre_id)
+
+    patient_meta = {
+        'task1_patient': bool(ehr_row.get('Task 1') == 1),
+        'task2_patient': bool(ehr_row.get('Task 2') == 1),
+        'Relapse':  ehr_row.get('Relapse'),
+        'RFS':      ehr_row.get('RFS'),
+        'T-stage':  ehr_row.get('T-stage'),
+        'N-stage':  ehr_row.get('N-stage'),
+        'M-stage':  ehr_row.get('M-stage'),
+        'HPV Status': ehr_row.get('HPV Status'),
+    }
+
+    rows = extract_hecktor_lesions(
+        suv=suv, seg_multi=seg, voxel_spacing_mm=voxel_spacing_zyx,
+        case_id=pid, centre_id=int(centre_id) if pd.notna(centre_id) else None,
+        centre_name=centre_name, vendor=vendor, patient_meta=patient_meta,
+    )
+    return rows
+
+
+N_SMOKE = 3
+print(f'Smoke test: {N_SMOKE} patients')
+t0 = time.time()
+smoke_rows = []
+with zipfile.ZipFile(ZIP_PATH) as zf:
+    for i, (_, r) in enumerate(cohort.head(N_SMOKE).iterrows(), 1):
+        pid = r['PatientID']
+        t_start = time.time()
+        rows = process_patient(zf, pid, r)
+        smoke_rows.extend([row.__dict__ for row in rows])
+        dt = time.time() - t_start
+        print(f'  [{i}/{N_SMOKE}] {pid}: {len(rows)} lesions in {dt:.1f}s '
+              f'(class breakdown: {sum(1 for x in rows if x.lesion_class==1)} GTVp / '
+              f'{sum(1 for x in rows if x.lesion_class==2)} GTVn / '
+              f'{sum(1 for x in rows if x.lesion_class==3)} mixed)')
+
+import pandas as pd
+df = pd.DataFrame(smoke_rows)
+print()
+print('Smoke output schema:')
+print(df.dtypes.to_string())
+print()
+print('Sample rows:')
+print(df[['case_id','lesion_id','lesion_class','suvmax','suvpeak','suvmean','volume_ml','vendor','centre_id']].to_string(index=False))
+
+
+# ===== Cell 7: Production extraction (~30-60 min) =====
+import time
+import json
+import pandas as pd
+import zipfile
+
+OUT_DIR = '/content/drive/MyDrive/P79 Data/hecktor'
+import os
+os.makedirs(OUT_DIR, exist_ok=True)
+
+OUT_PARQUET = f'{OUT_DIR}/hecktor_lesions.parquet'
+OUT_LOG_CSV = f'{OUT_DIR}/hecktor_extraction_log.csv'
+
+# Resume support: if parquet exists, skip patients already in it
+done_pids = set()
+if os.path.exists(OUT_PARQUET):
+    prev = pd.read_parquet(OUT_PARQUET, columns=['case_id'])
+    done_pids = set(prev['case_id'].unique())
+    print(f'Resume: {len(done_pids)} patients already in {OUT_PARQUET}; will skip')
+
+t0 = time.time()
+all_rows = []
+log_records = []
+n_done = 0
+n_skipped = 0
+n_failed = 0
+
+with zipfile.ZipFile(ZIP_PATH) as zf:
+    for i, (_, r) in enumerate(cohort.iterrows(), 1):
+        pid = r['PatientID']
+        if pid in done_pids:
+            n_skipped += 1
+            continue
+        try:
+            t_start = time.time()
+            rows = process_patient(zf, pid, r)
+            dt = time.time() - t_start
+            all_rows.extend([row.__dict__ for row in rows])
+            log_records.append({
+                'patient_id': pid, 'n_lesions': len(rows),
+                'elapsed_sec': dt, 'status': 'ok',
+                'centre_id': r.get('CenterID'),
+            })
+            n_done += 1
+            if n_done % 25 == 0:
+                rate = n_done / (time.time() - t0)
+                eta_min = (len(cohort) - n_done - n_skipped) / max(rate, 1e-6) / 60.0
+                print(f'  [{i}/{len(cohort)}] {pid}: {len(rows)} lesions, '
+                      f'rate {rate:.2f} patients/s, ETA {eta_min:.1f} min')
+        except Exception as e:
+            n_failed += 1
+            log_records.append({
+                'patient_id': pid, 'n_lesions': 0, 'elapsed_sec': 0,
+                'status': f'FAILED: {e}', 'centre_id': r.get('CenterID'),
+            })
+            print(f'  [{i}/{len(cohort)}] {pid}: FAILED: {e}')
+
+# Append to existing parquet (if any) and write
+if all_rows:
+    new_df = pd.DataFrame(all_rows)
+    if os.path.exists(OUT_PARQUET):
+        prev = pd.read_parquet(OUT_PARQUET)
+        out = pd.concat([prev, new_df], ignore_index=True)
+    else:
+        out = new_df
+    out.to_parquet(OUT_PARQUET, index=False)
+    print(f'\nWrote {OUT_PARQUET}: {len(out)} rows total')
+
+pd.DataFrame(log_records).to_csv(OUT_LOG_CSV, index=False, mode='a',
+                                  header=not os.path.exists(OUT_LOG_CSV))
+
+elapsed = time.time() - t0
+print(f'\nDone: {n_done} new, {n_skipped} resumed/skipped, {n_failed} failed in {elapsed/60:.1f} min')
+
+
+# ===== Cell 8: Schema sanity + lock SHA-256 =====
+import hashlib
+import pandas as pd
+
+def _sha256(p):
+    h = hashlib.sha256()
+    with open(p, 'rb') as f:
+        for chunk in iter(lambda: f.read(1<<20), b''):
+            h.update(chunk)
+    return h.hexdigest()
+
+df = pd.read_parquet(OUT_PARQUET)
+
+print(f'Total lesions: {len(df)}')
+print(f'Unique patients: {df["case_id"].nunique()}')
+print()
+print('Lesion-class breakdown:')
+print(df['lesion_class'].value_counts().sort_index().to_string())
+print()
+print('Per-centre breakdown:')
+print(df.groupby(['centre_id','centre_name','vendor']).size().to_string())
+print()
+print('Per-vendor breakdown:')
+print(df['vendor'].value_counts().to_string())
+print()
+print('SUV summary stats:')
+print(df[['suvmax','suvpeak','suvmean','volume_ml','tlg']].describe().round(2))
+print()
+print(f'OUT_PARQUET SHA-256:  {_sha256(OUT_PARQUET)}')
+print(f'OUT_PARQUET size:     {os.path.getsize(OUT_PARQUET):,} bytes')
+
+# Schema sanity vs AutoPET-III parquet for downstream conformal-code reuse
+expected_cols = {
+    'case_id','lesion_id','series_uid','suvmax','suvmean','suvpeak','tlg',
+    'volume_ml','n_voxels','centroid_0','centroid_1','centroid_2',
+    'voxel_spacing_0','voxel_spacing_1','voxel_spacing_2',
+    'dataset','tracer','vendor','radionuclide',
+    'softmax_mean','softmax_entropy',
+    'centre_id','centre_name','lesion_class',
+    'task1_patient','task2_patient','relapse','rfs_days',
+    't_stage','n_stage','m_stage','hpv_status',
+}
+present = set(df.columns)
+missing = expected_cols - present
+extra = present - expected_cols
+assert not missing, f'Missing expected columns: {missing}'
+print(f'Schema OK ({len(present)} columns; {len(extra)} extras: {sorted(extra)})')
+
+
+# ===== Cell 9: Stage outputs ready for pull-back =====
+# The HECKTOR lesion table is a SMALL artefact (probably <500 KB even at 2000 lesions);
+# pulls back to local data/interim/lesion_tables/ for §3.9 review prep + Phase 3 use.
+
+import shutil, hashlib, os
+STAGE = f'{OUT_DIR}/osf_stage_hecktor'
+os.makedirs(STAGE, exist_ok=True)
+
+for src, name in [
+    (OUT_PARQUET,           'hecktor_lesions.parquet'),
+    (OUT_LOG_CSV,           'hecktor_extraction_log.csv'),
+]:
+    if os.path.exists(src):
+        dst = os.path.join(STAGE, name)
+        shutil.copy(src, dst)
+        sz = os.path.getsize(dst)
+        h = hashlib.sha256()
+        with open(dst, 'rb') as f:
+            for chunk in iter(lambda: f.read(1<<20), b''):
+                h.update(chunk)
+        print(f'  staged {name}: {sz:,} bytes, SHA-256 {h.hexdigest()}')
+
+print()
+print(f'Drive stage location: {STAGE}')
+print(f'Pull-back from local Mac:')
+print(f'  python3 scripts/pull_phase2_outputs_from_drive.py --drive-stage "<...>/{STAGE.split("/")[-1]}"')
+print()
+print('Then move hecktor_lesions.parquet to data/interim/lesion_tables/')

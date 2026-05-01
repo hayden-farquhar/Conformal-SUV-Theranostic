@@ -1,0 +1,234 @@
+{
+  "target": "suvmax",
+  "alpha": 0.1,
+  "src_shas": {
+    "autopet_i_lesions": "9c78fa7a33e4a0cdf41e4c6158c04d1b11cdb1e038258232730dae4613d4059e",
+    "autopet_i_splits": "eb9291a1b21632f76eececa2a1c9cc13f75fd10c5f3ebc5da980c77a43b6e033",
+    "autopet_iii_lesions": "7bd267b73b46c1e8f1edf9dd6d147e1362b106a409e85d93cf0fc4e6f745f371",
+    "hecktor_lesions": "086077d84f66bbb88815371e5b73288a4c5137336ff4147a7458e91ea9c5f06d",
+    "phase2_wcv": "619e740acc96866bfa94d93c59d296a4b2d2ce8f503194b577f78dbe02d5c11f",
+    "driver_script": "cb2ce9e9f061166593de0d4fde4c3607cb0c8f1787215b7f64e6dd7c72912332",
+    "weighted_module": "05e6fdb25dc661ed38170d6c2b2e6a6ec2373d34861ac5ec1333fe8f641ea5b6",
+    "cqr_module": "bf61b58a4cf87ac04cbe43de5435d277cd0a3c0b0156efa09d8301a402ef1ea0"
+  },
+  "wcp_models": {
+    "autopet_iii": {
+      "classifier_auc": 0.574578847008107,
+      "weight_clip_low": 2.926177020953581,
+      "weight_clip_high": 18.08023775677354,
+      "weight_median": 11.718035290540033,
+      "weight_mean": 11.878664873014447,
+      "q_hat_W": 0.09103384569645812,
+      "feature_means": {
+        "volume_ml": [
+          23.81187322314251,
+          11.896880756294811
+        ],
+        "surface_area_cm2": [
+          66.41651061771957,
+          45.98438004821636
+        ],
+        "sphericity": [
+          0.5532273424865514,
+          0.54498607516398
+        ]
+      }
+    },
+    "hecktor": {
+      "classifier_auc": 0.44475981707215206,
+      "weight_clip_low": 0.16423940361938313,
+      "weight_clip_high": 2.485647526423556,
+      "weight_median": 2.339331052171602,
+      "weight_mean": 2.1915829585693962,
+      "q_hat_W": 0.08298374033269762,
+      "feature_means": {
+        "volume_ml": [
+          23.81187322314251,
+          12.46960280282737
+        ],
+        "surface_area_cm2": [
+          66.41651061771957,
+          43.70418921035727
+        ],
+        "sphericity": [
+          0.5532273424865514,
+          0.5635812782150424
+        ]
+      }
+    }
+  },
+  "wcp_ext_models": {
+    "autopet_iii": {
+      "classifier_auc": 1.0,
+      "weight_clip_low": 0.0033725105347639263,
+      "weight_clip_high": 0.006043725666614933,
+      "weight_median": 0.005538006138832645,
+      "weight_dispersion": 1.7920553855402532,
+      "ess_ratio": 0.9958215350850979,
+      "support_verdict": "red",
+      "flagged_reasons": [
+        "classifier_auc=1.0000 > 0.99"
+      ],
+      "q_hat_W_extended": 0.08418640104814745,
+      "feature_means": {
+        "volume_ml": [
+          23.81187322314251,
+          11.896880756294811
+        ],
+        "surface_area_cm2": [
+          66.41651061771957,
+          45.98438004821636
+        ],
+        "sphericity": [
+          0.5532273424865514,
+          0.54498607516398
+        ],
+        "voxel_volume_ml": [
+          0.01244102055521097,
+          0.04349615446426846
+        ],
+        "lesions_per_patient_in_cohort": [
+          4.5,
+          6.0
+        ],
+        "tracer_is_psma": [
+          0.0,
+          1.0
+        ],
+        "vendor_is_siemens": [
+          1.0,
+          0.8567518248175182
+        ],
+        "vendor_is_ge": [
+          0.0,
+          0.14324817518248176
+        ],
+        "vendor_is_philips": [
+          0.0,
+          0.0
+        ],
+        "centre_1": [
+          0.0,
+          0.0
+        ],
+        "centre_2": [
+          0.0,
+          0.0
+        ],
+        "centre_3": [
+          0.0,
+          0.0
+        ],
+        "centre_5": [
+          0.0,
+          0.0
+        ],
+        "centre_6": [
+          0.0,
+          0.0
+        ],
+        "centre_7": [
+          0.0,
+          0.0
+        ],
+        "centre_8": [
+          0.0,
+          0.0
+        ]
+      }
+    },
+    "hecktor": {
+      "classifier_auc": 1.0,
+      "weight_clip_low": 0.0006951699228149662,
+      "weight_clip_high": 0.002713283549526588,
+      "weight_median": 0.0026705898526560735,
+      "weight_dispersion": 3.9030508376133874,
+      "ess_ratio": 0.980589221120678,
+      "support_verdict": "red",
+      "flagged_reasons": [
+        "classifier_auc=1.0000 > 0.99"
+      ],
+      "q_hat_W_extended": 0.08418640104814745,
+      "feature_means": {
+        "volume_ml": [
+          23.81187322314251,
+          12.46960280282737
+        ],
+        "surface_area_cm2": [
+          66.41651061771957,
+          43.70418921035727
+        ],
+        "sphericity": [
+          0.5532273424865514,
+          0.5635812782150424
+        ],
+        "voxel_volume_ml": [
+          0.01244102055521097,
+          0.07220626412073713
+        ],
+        "lesions_per_patient_in_cohort": [
+          4.5,
+          2.0
+        ],
+        "tracer_is_psma": [
+          0.0,
+          0.0
+        ],
+        "vendor_is_siemens": [
+          1.0,
+          0.16973935155753336
+        ],
+        "vendor_is_ge": [
+          0.0,
+          0.7088366179275271
+        ],
+        "vendor_is_philips": [
+          0.0,
+          0.12142403051493961
+        ],
+        "centre_1": [
+          0.0,
+          0.07883026064844247
+        ],
+        "centre_2": [
+          0.0,
+          0.12142403051493961
+        ],
+        "centre_3": [
+          0.0,
+          0.09218054672600128
+        ],
+        "centre_5": [
+          0.0,
+          0.5778766687857597
+        ],
+        "centre_6": [
+          0.0,
+          0.0775588048315321
+        ],
+        "centre_7": [
+          0.0,
+          0.03305785123966942
+        ],
+        "centre_8": [
+          0.0,
+          0.019071837253655435
+        ]
+      }
+    }
+  },
+  "percohort_meta": {
+    "autopet_iii": {
+      "q_hat_local": 0.3711584443744022,
+      "n_holdout_patients": 67,
+      "n_holdout_lesions": 1539,
+      "n_eval_lesions": 7229
+    },
+    "hecktor": {
+      "q_hat_local": 0.3337575421464476,
+      "n_holdout_patients": 135,
+      "n_holdout_lesions": 299,
+      "n_eval_lesions": 1274
+    }
+  }
+}

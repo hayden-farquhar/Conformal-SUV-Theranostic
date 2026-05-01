@@ -1,0 +1,54 @@
+Dual license
+
+Code (everything under src/, scripts/, tests/, configs/, kaggle_notebooks/) is
+released under the MIT License. Documentation, the README, and the data files
+under data/ are released under the Creative Commons Attribution 4.0
+International License (CC BY 4.0). Where the data files are derived from
+upstream cohorts, the upstream licence terms also apply (AutoPET-I FDAT
+CC BY-NC 4.0; AutoPET-III TCIA CC BY 4.0; HECKTOR 2025 CC BY 4.0 components
+under the HECKTOR data-use agreement); see data_dictionary.md for upstream
+licence terms.
+
+================================================================================
+MIT License (code)
+================================================================================
+
+Copyright (c) 2026 Hayden Farquhar
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+================================================================================
+CC BY 4.0 (documentation and derived data tables under data/)
+================================================================================
+
+This work is licensed under the Creative Commons Attribution 4.0 International
+License. To view a copy of this license, visit:
+
+    https://creativecommons.org/licenses/by/4.0/
+
+You are free to share and adapt the documentation and derived data tables in
+this repository for any purpose, including commercially, provided that you
+give appropriate credit, provide a link to the licence, and indicate if
+changes were made.
+
+Note: AutoPET-I-derived lesion features inherit the upstream FDAT CC BY-NC 4.0
+licence (non-commercial use only). Re-users redistributing AutoPET-I-derived
+content must respect the non-commercial restriction even though this
+repository's documentation licence is CC BY 4.0. See data_dictionary.md for
+per-cohort licence inheritance.

@@ -1,0 +1,26 @@
+{
+  "created_utc": "2026-04-26T10:25:51.856202Z",
+  "pre_reg_doi": "10.17605/OSF.IO/4KAZN",
+  "pre_reg_section": "3.4",
+  "random_seed": 42,
+  "fractions": {
+    "train": 0.4,
+    "calibration": 0.2,
+    "test": 0.2,
+    "serial": 0.2
+  },
+  "input_lesion_table": "data/interim/lesion_tables/autopet_i_lesions.parquet",
+  "input_lesion_count_total": 4282,
+  "input_lesion_count_excluded": 2,
+  "input_lesion_count_retained": 4280,
+  "patients_assigned": 461,
+  "patients_dropped_no_retained_lesions": 0,
+  "patient_level_assumption": "case_id IS patient_id per FDAT/TCIA directory convention. The PETCT_<hex> directories at the top level of the FDAT release are anonymized patient identifiers; per-study scans (where present) are stored as date-named subdirectories under each patient (per Gatidis et al., Sci Data 2022, doi: 10.1038/s41597-022-01718-3). The Step 4 extraction in process_autopet_i.ipynb keys files by parts[1] of the zip path = patient_id; for the ~12% of patients with multiple longitudinal studies (1014 studies / 900 patients in the full cohort) only one study per patient was retained (the alphabetically-last one), which is the desired design for conformal exchangeability (avoids within-patient longitudinal correlation). 461 unique case_ids = 461 unique patients.",
+  "split_counts": {
+    "train": 184,
+    "serial": 93,
+    "calibration": 92,
+    "test": 92
+  },
+  "manifest_sha256": "0c4e345c3519bc854df6d2fc3ce8bf83bf8330d1669adbe90b8b99fe84eb6197"
+}

@@ -1,0 +1,115 @@
+import os, zipfile
+from collections import defaultdict
+from datetime import datetime, timedelta
+
+ZIP_PATH = '/content/drive/MyDrive/P79 Data/autopet_i/fdg-pet-ct-lesions.zip'
+MAX_INTERVAL_WEEKS = 8
+
+with zipfile.ZipFile(ZIP_PATH, 'r') as zf:
+    names = zf.namelist()
+
+print(f'Total entries in zip: {len(names)}')
+print(f'\nSample entries (first 5 NIfTIs):')
+nifti_sample = [n for n in names if n.endswith('.nii.gz')][:5]
+for n in nifti_sample:
+    print(f'  {n}')
+print()
+
+# Defensive: find the PETCT_ component in each path regardless of wrapper depth
+patient_studies = defaultdict(set)
+for n in names:
+    if not n.endswith('.nii.gz'):
+        continue
+    parts = n.split('/')
+    petct_idx = next((i for i, p in enumerate(parts) if p.startswith('PETCT_')), None)
+    if petct_idx is None or len(parts) <= petct_idx + 1:
+        continue
+    pid = parts[petct_idx]
+    sdate = parts[petct_idx + 1]
+    patient_studies[pid].add(sdate)
+
+n_patients = len(patient_studies)
+n_multi = sum(1 for s in patient_studies.values() if len(s) >= 2)
+total_studies = sum(len(s) for s in patient_studies.values())
+print(f'Patients (total):              {n_patients}')
+if n_patients > 0:
+    print(f'Patients with >=2 studies:    {n_multi} ({n_multi/n_patients*100:.1f}%)')
+print(f'Total study_date directories:  {total_studies}')
+
+# FDAT/TCIA study_date format: "MM-DD-YYYY-NA-PET-CT <description>-<accession>"
+def try_parse(s):
+    if len(s) < 10:
+        return None
+    prefix = s[:10]
+    for fmt in ('%m-%d-%Y', '%Y-%m-%d', '%d-%m-%Y'):
+        try: return datetime.strptime(prefix, fmt)
+        except ValueError: continue
+    return None
+
+max_interval = timedelta(weeks=MAX_INTERVAL_WEEKS)
+pairs = []
+all_intervals = []  # all chronologically-ordered intra-patient gaps
+for pid, sdates in patient_studies.items():
+    if len(sdates) < 2:
+        continue
+    # Parse + sort chronologically (NOT alphabetically) so j-i is always positive
+    parseable = [(s, try_parse(s)) for s in sdates]
+    parseable = [(s, d) for s, d in parseable if d is not None]
+    if len(parseable) < 2:
+        continue
+    parseable.sort(key=lambda x: x[1])  # chronological order by parsed date
+    for i in range(len(parseable)):
+        for j in range(i + 1, len(parseable)):
+            interval = parseable[j][1] - parseable[i][1]
+            # interval is now always >= 0 because of chronological sort
+            all_intervals.append(interval.days)
+            if interval <= max_interval:
+                pairs.append({
+                    'patient_id': pid,
+                    'study_1': parseable[i][0][:10],
+                    'study_2': parseable[j][0][:10],
+                    'interval_days': interval.days,
+                })
+
+print(f'\n--- All multi-study intervals (chronologically ordered, j > i in time) ---')
+if all_intervals:
+    sorted_int = sorted(all_intervals)
+    print(f'  count:  {len(sorted_int)}')
+    print(f'  min:    {sorted_int[0]} days')
+    print(f'  P25:    {sorted_int[len(sorted_int)//4]} days')
+    print(f'  median: {sorted_int[len(sorted_int)//2]} days')
+    print(f'  P75:    {sorted_int[3*len(sorted_int)//4]} days')
+    print(f'  max:    {sorted_int[-1]} days')
+    n_in_4wk  = sum(1 for d in sorted_int if d <= 28)
+    n_in_8wk  = sum(1 for d in sorted_int if d <= 56)
+    n_in_12wk = sum(1 for d in sorted_int if d <= 84)
+    n_in_16wk = sum(1 for d in sorted_int if d <= 112)
+    n_in_26wk = sum(1 for d in sorted_int if d <= 182)
+    n_in_52wk = sum(1 for d in sorted_int if d <= 365)
+    print(f'  intervals <= 4 weeks  (28 days):  {n_in_4wk}')
+    print(f'  intervals <= 8 weeks  (56 days):  {n_in_8wk}  <-- pre-reg 3.5 threshold')
+    print(f'  intervals <= 12 weeks (84 days):  {n_in_12wk}')
+    print(f'  intervals <= 16 weeks (112 days): {n_in_16wk}')
+    print(f'  intervals <= 26 weeks (182 days): {n_in_26wk}')
+    print(f'  intervals <= 52 weeks (365 days): {n_in_52wk}')
+
+print(f'\n--- Pairs within {MAX_INTERVAL_WEEKS} weeks (pre-reg 3.5) ---')
+print(f'Total pairs: {len(pairs)}')
+if pairs:
+    intervals = [p['interval_days'] for p in pairs]
+    print(f'\nInterval days -- min: {min(intervals)}, '
+          f'median: {sorted(intervals)[len(intervals)//2]}, '
+          f'max: {max(intervals)}')
+    print(f'\nFirst 10 pairs:')
+    for p in pairs[:10]:
+        print(f"  {p['patient_id']}: {p['study_1']} -> {p['study_2']} ({p['interval_days']} days)")
+
+print(f'\n=== PRE-REG 3.5 DECISION GATE ===')
+if len(pairs) >= 50:
+    print(f'  {len(pairs)} pairs >= 50 -- PRIMARY PATH (real serial pairs)')
+    print(f'  Phase 2 will use real same-patient pairs for test-retest reference.')
+    print(f'  Multi-study re-extraction pass on FDAT zip is required to access these pairs')
+    print(f'  (current AutoPET-I parquet kept only ONE study per patient).')
+else:
+    print(f'  {len(pairs)} pairs < 50 -- POISSON-NOISE FALLBACK ACTIVATED')
+    print(f'  Phase 2 will use Poisson-noise injection per pre-reg 3.5.')

@@ -1,0 +1,504 @@
+================================================================================
+Lesion-feature schema augmentation for Phase 3 (2026-04-30)
+
+Goal: bring all three cohorts' parquet schemas in line with pre-reg §4.2 by
+adding surface_area_cm2 + sphericity. Without these, the Phase 3 CQR runs on
+the wrong feature set (caught at dry-run 2026-04-30).
+
+Three jobs in one Colab session:
+  Cell A:  Re-extract HECKTOR lesions with patched src/preprocess/hecktor_lesions.py
+           (now persists surface_area_cm2 + sphericity in the dataclass output).
+           ~6 min.
+
+  Cell B:  Augment AutoPET-III parquet via src/features/augment_lesion_features.py.
+           Reads existing parquet + per-series SEG NIfTIs from Drive. ~15-30 min
+           (497 series, mostly Drive I/O bound).
+
+  Cell C:  Augment AutoPET-I parquet. Reads existing parquet + FDAT zip
+           (pre-staged locally per P80 §1.5 pattern). ~30-60 min (I/O bound).
+
+Each cell writes its augmented parquet to a NEW path so we don't overwrite the
+original until you've sanity-checked the output. After all three pass:
+
+  - Pull augmented parquets back to local data/interim/lesion_tables/
+    (overwriting the existing schema-incomplete parquets is safe -- the canonical
+    versions are SHA-locked on OSF and will remain there as the schema-incomplete
+    "v1"; the schema-complete versions become "v2".)
+  - Re-run Phase 3 dry-run.
+  - File Amendment 10 documenting the schema fix.
+  - Then commit Phase 3 if the verdicts make sense.
+
+Before opening Colab: rebuild p79_code.zip locally with:
+    python3 scripts/build_colab_code_zip.py
+
+================================================================================
+
+
+# ===== Cell 1: Mount Drive =====
+from google.colab import drive
+drive.mount('/content/drive')
+import os
+print('Drive mounted:', os.path.exists('/content/drive/MyDrive'))
+# Then drag p79_code.zip from ~/Downloads into the Colab Files panel.
+
+
+# ===== Cell 2: Unzip code =====
+import os, sys, shutil, zipfile
+
+ZIP_PATH = '/content/p79_code.zip'
+COLAB_REPO = '/content/p79'
+assert os.path.exists(ZIP_PATH), 'Upload p79_code.zip via Files panel first'
+if os.path.exists(COLAB_REPO):
+    shutil.rmtree(COLAB_REPO)
+os.makedirs(COLAB_REPO, exist_ok=True)
+with zipfile.ZipFile(ZIP_PATH, 'r') as zf:
+    zf.extractall(COLAB_REPO)
+os.chdir(COLAB_REPO)
+sys.path.insert(0, COLAB_REPO)
+
+# Verify the patched module is loaded (HecktorLesionFeatures must have surface_area_cm2)
+from src.preprocess.hecktor_lesions import HecktorLesionFeatures
+field_names = {f.name for f in HecktorLesionFeatures.__dataclass_fields__.values()}
+assert 'surface_area_cm2' in field_names, 'HECKTOR module missing the patch'
+assert 'sphericity' in field_names, 'HECKTOR module missing the patch'
+from src.features.augment_lesion_features import augment_case
+print('Imports OK; surface_area_cm2 + sphericity in HecktorLesionFeatures schema.')
+
+
+# ===== Cell 3: Install deps =====
+!pip install --quiet SimpleITK pyarrow pydicom openpyxl
+
+
+# ============================================================================
+# Cell A: Re-extract HECKTOR lesions (uses patched hecktor_lesions.py)
+# ============================================================================
+
+# ===== Cell A1: Stage HECKTOR zip locally (idempotent; SHA-checks if already staged) =====
+import os, shutil, hashlib
+from pathlib import Path
+
+DRIVE_ZIP_HEK = Path('/content/drive/MyDrive/HECKTOR 2025/hecktor_2025_training_defaced.zip')
+LOCAL_ZIP_HEK = Path('/content/hecktor_2025_training_defaced.zip')
+EXPECTED_HEK_PREFIX = '1abcf1d9'
+
+def _file_sha256(p, chunk=2**20):
+    h = hashlib.sha256()
+    with open(p, 'rb') as f:
+        for buf in iter(lambda: f.read(chunk), b''):
+            h.update(buf)
+    return h.hexdigest()
+
+if LOCAL_ZIP_HEK.exists() and _file_sha256(LOCAL_ZIP_HEK).startswith(EXPECTED_HEK_PREFIX):
+    print(f'Local HECKTOR zip already staged and SHA-verified.')
+else:
+    print(f'Copying {DRIVE_ZIP_HEK} -> {LOCAL_ZIP_HEK} (~10-15 min)...')
+    shutil.copy2(DRIVE_ZIP_HEK, LOCAL_ZIP_HEK)
+    sha = _file_sha256(LOCAL_ZIP_HEK)
+    print(f'Local zip SHA-256: {sha}')
+    assert sha.startswith(EXPECTED_HEK_PREFIX), 'HECKTOR zip integrity check failed'
+ZIP_PATH = str(LOCAL_ZIP_HEK)
+
+
+# ===== Cell A2: Re-run HECKTOR extraction (overwrites existing reviewed parquet's pre-§3.9 source) =====
+# This is the same logic as kaggle_notebooks/hecktor_lesion_extraction_cells.txt Cells 5-9
+# but with the patched src/preprocess/hecktor_lesions.py producing SA + sphericity.
+# Output writes to a NEW path; you'll re-run §3.9 triage on the new file before replacing.
+
+import zipfile, time
+import pandas as pd
+import numpy as np
+import SimpleITK as sitk
+from pathlib import Path
+
+from src.preprocess.hecktor_lesions import extract_hecktor_lesions
+from src.preprocess.hecktor_vendor import lookup_centre
+
+DATA_ROOT = 'HECKTOR 2025 Training Data Defaced ALL/'
+EHR_MEMBER = f'{DATA_ROOT}HECKTOR_2025_Training_EHR_with_Data_Dictionary.xlsx'
+
+OUT_DIR_HEK = '/content/drive/MyDrive/P79 Data/hecktor'
+os.makedirs(OUT_DIR_HEK, exist_ok=True)
+OUT_PARQUET_HEK = f'{OUT_DIR_HEK}/hecktor_lesions_v2.parquet'   # NEW path; v2 = schema-complete
+
+with zipfile.ZipFile(ZIP_PATH) as zf:
+    with zf.open(EHR_MEMBER) as fp:
+        ehr = pd.read_excel(fp, sheet_name='Data')
+cohort = ehr[(ehr['Task 1'] == 1) | (ehr['Task 2'] == 1)].copy()
+
+def _read_nifti_from_zip(zf, member):
+    with zf.open(member) as fp:
+        data = fp.read()
+    tmp = f'/tmp/_hek_{hash(member) % 10**9}.nii.gz'
+    with open(tmp, 'wb') as f:
+        f.write(data)
+    img = sitk.ReadImage(tmp)
+    os.remove(tmp)
+    return img
+
+def _resample_seg_to_pt(seg_img, pt_img):
+    rs = sitk.ResampleImageFilter()
+    rs.SetReferenceImage(pt_img)
+    rs.SetInterpolator(sitk.sitkNearestNeighbor)
+    rs.SetDefaultPixelValue(0)
+    return rs.Execute(seg_img)
+
+t0 = time.time()
+all_rows = []
+n_done = 0
+n_failed = 0
+with zipfile.ZipFile(ZIP_PATH) as zf:
+    for i, (_, r) in enumerate(cohort.iterrows(), 1):
+        pid = r['PatientID']
+        try:
+            pt = _read_nifti_from_zip(zf, f'{DATA_ROOT}{pid}/{pid}__PT.nii.gz')
+            seg = _read_nifti_from_zip(zf, f'{DATA_ROOT}{pid}/{pid}.nii.gz')
+            seg_on_pt = _resample_seg_to_pt(seg, pt)
+            suv = sitk.GetArrayFromImage(pt).astype(np.float32)
+            seg_arr = sitk.GetArrayFromImage(seg_on_pt).astype(np.uint8)
+            spacing_xyz = pt.GetSpacing()
+            spacing_zyx = (float(spacing_xyz[2]), float(spacing_xyz[1]), float(spacing_xyz[0]))
+
+            centre_id = r.get('CenterID')
+            cname, vendor = lookup_centre(centre_id)
+            meta = {
+                'task1_patient': bool(r.get('Task 1') == 1),
+                'task2_patient': bool(r.get('Task 2') == 1),
+                'Relapse':  r.get('Relapse'),  'RFS': r.get('RFS'),
+                'T-stage':  r.get('T-stage'),  'N-stage': r.get('N-stage'),
+                'M-stage':  r.get('M-stage'),  'HPV Status': r.get('HPV Status'),
+            }
+            rows = extract_hecktor_lesions(
+                suv=suv, seg_multi=seg_arr, voxel_spacing_mm=spacing_zyx,
+                case_id=pid,
+                centre_id=int(centre_id) if pd.notna(centre_id) else None,
+                centre_name=cname, vendor=vendor, patient_meta=meta,
+            )
+            all_rows.extend([row.__dict__ for row in rows])
+            n_done += 1
+            if n_done % 100 == 0:
+                rate = n_done / (time.time() - t0)
+                print(f'  [{i}/{len(cohort)}] {pid}  rate={rate:.2f} pat/s')
+        except KeyError as e:
+            # Task2-only patients have no SEG -- expected, not a real failure
+            n_failed += 1
+        except Exception as e:
+            print(f'  [{i}/{len(cohort)}] {pid} FAILED: {e}')
+            n_failed += 1
+
+df = pd.DataFrame(all_rows)
+df.to_parquet(OUT_PARQUET_HEK, index=False)
+print(f'\nHECKTOR v2 extraction: {n_done} succeeded, {n_failed} skipped/failed in {(time.time()-t0)/60:.1f} min')
+print(f'Total lesions: {len(df)}; columns: {sorted(df.columns)}')
+print(f'  surface_area_cm2 min/median/max: {df["surface_area_cm2"].min():.2f} / '
+      f'{df["surface_area_cm2"].median():.2f} / {df["surface_area_cm2"].max():.2f}')
+print(f'  sphericity      min/median/max: {df["sphericity"].min():.3f} / '
+      f'{df["sphericity"].median():.3f} / {df["sphericity"].max():.3f}')
+print(f'Wrote {OUT_PARQUET_HEK}')
+
+
+# ===== Cell A3: Re-run §3.9 triage on the v2 HECKTOR parquet =====
+# Same triage as before; expected output identical (1573 retained, 0 excluded).
+import subprocess
+HEK_REVIEWED_V2 = OUT_PARQUET_HEK.replace('.parquet', '_reviewed.parquet')
+result = subprocess.run([
+    'python3', 'scripts/section_3_9_hecktor_triage.py',
+    '--parquet', OUT_PARQUET_HEK,
+    '--out', HEK_REVIEWED_V2,
+], capture_output=True, text=True)
+print(result.stdout)
+if result.returncode != 0:
+    print('STDERR:', result.stderr)
+
+
+# ============================================================================
+# Cell B: Augment AutoPET-III parquet (read SEG NIfTIs from Drive)
+# ============================================================================
+
+# ===== Cell B1: Augment =====
+# Resolves the input parquet from any of these locations (in priority order):
+#   1. /content/p79/data/interim/lesion_tables/autopet_iii_lesions_reviewed.parquet
+#      (present if you used a code zip rebuilt 2026-04-30 or later)
+#   2. /content/autopet_iii_lesions_reviewed.parquet
+#      (present if you dragged the file directly into the Colab Files panel)
+#   3. /content/drive/MyDrive/P79 Data/autopet_iii/autopet_iii_lesions_reviewed.parquet
+#      (present only if a previous Colab session wrote it back to Drive)
+import time, os
+import pandas as pd
+import numpy as np
+import SimpleITK as sitk
+
+from src.features.augment_lesion_features import augment_case
+
+CANDIDATE_PARQUETS = [
+    '/content/p79/data/interim/lesion_tables/autopet_iii_lesions_reviewed.parquet',
+    '/content/autopet_iii_lesions_reviewed.parquet',
+    '/content/drive/MyDrive/P79 Data/autopet_iii/autopet_iii_lesions_reviewed.parquet',
+]
+AUTOPET_III_LESIONS_IN = next((p for p in CANDIDATE_PARQUETS if os.path.exists(p)), None)
+assert AUTOPET_III_LESIONS_IN, (
+    'autopet_iii_lesions_reviewed.parquet not found at any expected location.\n'
+    'Drag it from your local Mac (data/interim/lesion_tables/) into the Colab '
+    'Files panel, then re-run this cell.'
+)
+print(f'Using parquet: {AUTOPET_III_LESIONS_IN}')
+
+AUTOPET_III_SEG_DIR     = '/content/drive/MyDrive/P79 Data/autopet_iii/segmentations'
+AUTOPET_III_LESIONS_OUT = '/content/drive/MyDrive/P79 Data/autopet_iii/autopet_iii_lesions_reviewed_v2.parquet'
+assert os.path.exists(AUTOPET_III_SEG_DIR), f'SEG dir missing: {AUTOPET_III_SEG_DIR}'
+
+df = pd.read_parquet(AUTOPET_III_LESIONS_IN)
+print(f'{len(df)} lesions across {df["case_id"].nunique()} patients ({df["series_uid"].nunique()} series)')
+
+t0 = time.time()
+augmented_chunks = []
+n_done = 0
+n_failed_seg = 0
+unmatched_total = 0
+
+for series_uid, series_rows in df.groupby('series_uid'):
+    seg_path = f'{AUTOPET_III_SEG_DIR}/{series_uid}.nii.gz'
+    if not os.path.exists(seg_path):
+        print(f'  MISSING SEG: {series_uid[:40]}... ({len(series_rows)} rows left unaugmented)')
+        n_failed_seg += 1
+        # Pass through with NaN columns
+        miss = series_rows.copy()
+        miss['surface_area_cm2'] = float('nan')
+        miss['sphericity'] = float('nan')
+        augmented_chunks.append(miss)
+        continue
+    try:
+        seg_img = sitk.ReadImage(seg_path)
+        seg_arr = sitk.GetArrayFromImage(seg_img).astype(np.int32)
+        spacing_xyz = seg_img.GetSpacing()
+        spacing_zyx = (float(spacing_xyz[2]), float(spacing_xyz[1]), float(spacing_xyz[0]))
+        out_df, result = augment_case(
+            case_id=str(series_rows['case_id'].iloc[0]),
+            case_lesions=series_rows,
+            seg=seg_arr,
+            voxel_spacing_zyx=spacing_zyx,
+        )
+        unmatched_total += result.n_lesions_unmatched
+        augmented_chunks.append(out_df)
+        n_done += 1
+        if n_done % 50 == 0:
+            rate = n_done / (time.time() - t0)
+            print(f'  [{n_done} series done]  rate={rate:.2f} series/s  unmatched={unmatched_total}')
+    except Exception as e:
+        print(f'  FAILED {series_uid[:40]}...: {e}')
+        miss = series_rows.copy()
+        miss['surface_area_cm2'] = float('nan')
+        miss['sphericity'] = float('nan')
+        augmented_chunks.append(miss)
+        n_failed_seg += 1
+
+augmented = pd.concat(augmented_chunks, ignore_index=True)
+augmented.to_parquet(AUTOPET_III_LESIONS_OUT, index=False)
+
+n_with_sa = int(augmented['surface_area_cm2'].notna().sum())
+print(f'\nAutoPET-III augmentation:')
+print(f'  series done={n_done}, series failed={n_failed_seg}, unmatched lesions={unmatched_total}')
+print(f'  rows with SA+sphericity: {n_with_sa}/{len(augmented)} ({n_with_sa/len(augmented)*100:.1f}%)')
+print(f'  surface_area_cm2 median: {augmented["surface_area_cm2"].median():.2f}')
+print(f'  sphericity      median: {augmented["sphericity"].median():.3f}')
+print(f'Wrote {AUTOPET_III_LESIONS_OUT}')
+
+
+# ============================================================================
+# Cell C: Augment AutoPET-I parquet (read SEG NIfTIs from FDAT zip)
+# ============================================================================
+
+# ===== Cell C1: Stage or stream FDAT zip =====
+# Auto-selects strategy based on Colab disk:
+#   - If >310 GB free on /content: copy zip locally (faster per-case I/O)
+#   - Else: stream zip directly from Drive (slower I/O but disk-safe)
+# Standard Colab CPU runtime has ~100-225 GB free, so streaming is the usual path.
+# A Pro/high-RAM runtime can fit the 282.9 GB zip locally.
+import shutil, os
+from pathlib import Path
+
+DRIVE_ZIP_FDAT = Path('/content/drive/MyDrive/P79 Data/autopet_i/fdg-pet-ct-lesions.zip')
+LOCAL_ZIP_FDAT = Path('/content/fdg-pet-ct-lesions.zip')
+
+assert DRIVE_ZIP_FDAT.exists(), f'AutoPET-I FDAT zip not on Drive at {DRIVE_ZIP_FDAT}'
+free_gb = shutil.disk_usage('/content').free / (1024**3)
+print(f'Free space on /content: {free_gb:.1f} GB')
+
+if LOCAL_ZIP_FDAT.exists():
+    print(f'Local FDAT zip already present at {LOCAL_ZIP_FDAT}; reusing.')
+    ZIP_PATH_FDAT = str(LOCAL_ZIP_FDAT)
+elif free_gb > 310:
+    print(f'Copying {DRIVE_ZIP_FDAT} -> {LOCAL_ZIP_FDAT} (~30-60 min)...')
+    shutil.copy2(DRIVE_ZIP_FDAT, LOCAL_ZIP_FDAT)
+    ZIP_PATH_FDAT = str(LOCAL_ZIP_FDAT)
+else:
+    print(f'Insufficient disk for local stage (282.9 GB needed); streaming from Drive.')
+    print(f'Per-case Drive reads will be slower than local SSD; expect ~60-120 min total.')
+    ZIP_PATH_FDAT = str(DRIVE_ZIP_FDAT)
+print(f'Using zip at: {ZIP_PATH_FDAT}')
+
+
+# ===== Cell C2: Build patient -> SEG path lookup from zip namelist =====
+import zipfile
+
+with zipfile.ZipFile(ZIP_PATH_FDAT, 'r') as zf:
+    names = zf.namelist()
+
+# FDAT layout: fdg-pet-ct-lesions/{patient_id}/{study_date}/SEG.nii.gz
+# Build dict: patient_id -> list of (study_date, seg_member)
+from collections import defaultdict
+fdat_segs = defaultdict(list)
+for n in names:
+    if not n.endswith('SEG.nii.gz'):
+        continue
+    parts = n.split('/')
+    petct_idx = next((i for i, p in enumerate(parts) if p.startswith('PETCT_')), None)
+    if petct_idx is None or petct_idx + 1 >= len(parts):
+        continue
+    pid = parts[petct_idx]
+    sdate = parts[petct_idx + 1]
+    fdat_segs[pid].append((sdate, n))
+
+print(f'FDAT zip: {len(fdat_segs)} patients with SEG files; '
+      f'{sum(len(v) for v in fdat_segs.values())} total SEG entries')
+
+
+# ===== Cell C3: Augment AutoPET-I parquet =====
+import time, os, zipfile, tempfile
+import pandas as pd
+import numpy as np
+import nibabel as nib
+
+from src.features.augment_lesion_features import augment_case
+
+AUTOPET_I_LESIONS_OUT = '/content/drive/MyDrive/P79 Data/autopet_i/lesion_features_v3.parquet'
+
+# Resolve input parquet from any of these (priority order):
+#   1. /content/drive/MyDrive/P79 Data/autopet_i/lesion_features_v2.parquet  (Drive)
+#   2. /content/p79/data/interim/lesion_tables/autopet_i_lesions.parquet  (rebuilt zip 2026-04-30+)
+#   3. /content/autopet_i_lesions.parquet  (dragged in via Files panel)
+CANDIDATE_PARQUETS_I = [
+    '/content/drive/MyDrive/P79 Data/autopet_i/lesion_features_v2.parquet',
+    '/content/p79/data/interim/lesion_tables/autopet_i_lesions.parquet',
+    '/content/autopet_i_lesions.parquet',
+]
+AUTOPET_I_LESIONS_IN = next((p for p in CANDIDATE_PARQUETS_I if os.path.exists(p)), None)
+assert AUTOPET_I_LESIONS_IN, (
+    'AutoPET-I parquet not found at any expected location.\n'
+    'Drag autopet_i_lesions.parquet from your local Mac (data/interim/lesion_tables/) '
+    'into the Colab Files panel, then re-run this cell.'
+)
+print(f'Using parquet: {AUTOPET_I_LESIONS_IN}')
+
+df = pd.read_parquet(AUTOPET_I_LESIONS_IN)
+print(f'{len(df)} lesions across {df["case_id"].nunique()} patients')
+
+t0 = time.time()
+augmented_chunks = []
+unmatched_total = 0
+n_done = 0
+n_failed = 0
+
+with zipfile.ZipFile(ZIP_PATH_FDAT, 'r') as zf:
+    for case_id, case_rows in df.groupby('case_id'):
+        seg_entries = fdat_segs.get(case_id, [])
+        if not seg_entries:
+            print(f'  NO SEG in zip for {case_id}; passing through with NaN')
+            miss = case_rows.copy()
+            miss['surface_area_cm2'] = float('nan')
+            miss['sphericity'] = float('nan')
+            augmented_chunks.append(miss)
+            n_failed += 1
+            continue
+
+        # If patient has multiple study_dates, pick the one whose SEG produces
+        # components matching the parquet's centroid+n_voxels signature.
+        best_match_chunk = None
+        best_match_score = -1
+        for sdate, seg_member in seg_entries:
+            try:
+                with zf.open(seg_member) as fp:
+                    seg_bytes = fp.read()
+                # Write to /tmp briefly for nibabel
+                with tempfile.NamedTemporaryFile(suffix='.nii.gz', delete=False) as tmp:
+                    tmp.write(seg_bytes)
+                    tmp_path = tmp.name
+                seg_img = nib.load(tmp_path)
+                arr = np.asarray(seg_img.get_fdata())
+                # NO transpose: the original AutoPET-I extraction (process_autopet_i.ipynb
+                # Step 4) used nibabel.get_fdata() without transposing, so the parquet's
+                # centroid_0/1/2 columns are in nibabel's native (I, J, K) order. We must
+                # match that here or centroid sanity-checks fail (~99% mismatches).
+                seg_arr = arr.astype(np.int32)
+                spacing = seg_img.header.get_zooms()[:3]  # (sx, sy, sz) per nibabel
+                spacing_ijk = (float(spacing[0]), float(spacing[1]), float(spacing[2]))
+                os.remove(tmp_path)
+
+                out_df, result = augment_case(
+                    case_id=case_id, case_lesions=case_rows,
+                    seg=seg_arr, voxel_spacing_zyx=spacing_ijk,
+                )
+                if result.n_lesions_matched > best_match_score:
+                    best_match_score = result.n_lesions_matched
+                    best_match_chunk = (out_df, result)
+            except Exception:
+                continue
+        if best_match_chunk is None:
+            print(f'  {case_id}: no candidate SEG produced any matches')
+            miss = case_rows.copy()
+            miss['surface_area_cm2'] = float('nan')
+            miss['sphericity'] = float('nan')
+            augmented_chunks.append(miss)
+            n_failed += 1
+            continue
+        out_df, result = best_match_chunk
+        unmatched_total += result.n_lesions_unmatched
+        augmented_chunks.append(out_df)
+        n_done += 1
+        if n_done % 50 == 0:
+            rate = n_done / (time.time() - t0)
+            print(f'  [{n_done}/{df["case_id"].nunique()}]  rate={rate:.2f} pat/s  unmatched={unmatched_total}')
+
+augmented = pd.concat(augmented_chunks, ignore_index=True)
+augmented.to_parquet(AUTOPET_I_LESIONS_OUT, index=False)
+
+n_with_sa = int(augmented['surface_area_cm2'].notna().sum())
+print(f'\nAutoPET-I augmentation:')
+print(f'  patients done={n_done}, patients failed={n_failed}, unmatched lesions={unmatched_total}')
+print(f'  rows with SA+sphericity: {n_with_sa}/{len(augmented)} ({n_with_sa/len(augmented)*100:.1f}%)')
+print(f'Wrote {AUTOPET_I_LESIONS_OUT}')
+
+
+# ============================================================================
+# Cell D: Stage all three augmented outputs for pull-back
+# ============================================================================
+
+import shutil, hashlib, os
+
+STAGE = '/content/drive/MyDrive/P79 Data/augment_stage'
+os.makedirs(STAGE, exist_ok=True)
+
+def _sha256(p):
+    h = hashlib.sha256()
+    with open(p, 'rb') as fh:
+        for chunk in iter(lambda: fh.read(1<<20), b''):
+            h.update(chunk)
+    return h.hexdigest()
+
+for src in [
+    HEK_REVIEWED_V2,
+    AUTOPET_III_LESIONS_OUT,
+    AUTOPET_I_LESIONS_OUT,
+]:
+    if not os.path.exists(src):
+        print(f'  MISSING: {src}'); continue
+    name = os.path.basename(src)
+    dst = os.path.join(STAGE, name)
+    shutil.copy(src, dst)
+    print(f'  staged {name}: {os.path.getsize(dst):,} bytes  SHA-256 {_sha256(dst)}')
+
+print()
+print(f'Stage: {STAGE}')
+print('Pull these 3 files back to local data/interim/lesion_tables/:')
+print('  - hecktor_lesions_v2_reviewed.parquet')
+print('  - autopet_iii_lesions_reviewed_v2.parquet')
+print('  - lesion_features_v3.parquet')

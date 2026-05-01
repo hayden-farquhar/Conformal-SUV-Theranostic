@@ -1,0 +1,103 @@
+# Default configuration for conformal SUV theranostic study
+# Pre-registration: https://doi.org/10.17605/OSF.IO/4KAZN
+
+# --- Data paths ---
+data:
+  raw_dir: data/raw
+  interim_dir: data/interim
+  processed_dir: data/processed
+  autopet_i_dir: data/raw/autopet_i
+  autopet_iii_dir: data/raw/autopet_iii
+  hecktor_dir: data/raw/hecktor_2022
+
+# --- Split allocation (pre-registered §3.4) ---
+splits:
+  seed: 42
+  autopet_i:
+    train_frac: 0.40
+    calibration_frac: 0.20
+    test_frac: 0.20
+    serial_frac: 0.20
+  # AutoPET-III and HECKTOR used entirely as external validation
+
+# --- SUV calculation (pre-registered §3.3) ---
+suv:
+  half_life_f18_sec: 6586.2
+  half_life_ga68_sec: 4062.0
+  validation_tolerance_pct: 1.0  # ±1% agreement with reference
+  validation_n_cases: 20
+  max_plausible_suvmax: 50  # flag for manual review above this
+
+# --- Lesion extraction (pre-registered §3.2) ---
+lesions:
+  min_volume_ml: 1.0
+  motion_artefact_threshold_mm: 10.0
+
+# --- SUVpeak definition (PERCIST 1.0) ---
+suvpeak:
+  sphere_volume_ml: 1.0
+  min_lesion_volume_for_peak_ml: 1.2  # below this, SUVpeak := SUVmax
+
+# --- Mondrian stratification (pre-registered §4.3) ---
+mondrian:
+  min_stratum_size: 30
+  volume_quartile_bins: 4
+  stratify_by:
+    - tracer
+    - vendor
+    - volume_quartile
+
+# --- CQR hyperparameters (pre-registered §5.2.3) ---
+cqr:
+  model: lightgbm
+  lightgbm:
+    num_leaves: 31
+    max_depth: 6
+    learning_rate: 0.05
+    n_estimators: 500
+    min_child_samples: 20
+  cv_folds: 5
+  alpha_levels:
+    - 0.05  # 95% CI
+    - 0.10  # 90% CI
+    - 0.20  # 80% CI
+
+# --- Test-retest (pre-registered §3.5) ---
+test_retest:
+  max_scan_interval_weeks: 8
+  max_centroid_displacement_mm: 20.0
+  min_pairs_for_primary: 50  # decision gate
+  poisson_noise_replicates: 10
+  poisson_dose_reduction_levels:
+    - 0.50
+    - 0.25
+    - 0.10
+
+# --- VISION overlay (pre-registered §5.3.1) ---
+vision:
+  liver_roi_volume_cm3: 5.0
+  # Eligibility: lesion SUVmax > liver SUVmean
+
+# --- PERCIST overlay (pre-registered §5.3.2) ---
+percist:
+  response_threshold_pct: 30.0
+  min_absolute_change_sul: 0.8
+
+# --- Bootstrap (pre-registered §5.5.10) ---
+bootstrap:
+  n_resamples: 2000
+  ci_level: 0.95
+  resample_level: patient  # patient-level resampling
+
+# --- Meta-coverage (pre-registered §5.5.13) ---
+meta_coverage:
+  n_resplits: 200
+
+# --- Seed stability (pre-registered §5.5.12) ---
+seed_stability:
+  seeds:
+    - 42
+    - 123
+    - 456
+    - 789
+    - 1024

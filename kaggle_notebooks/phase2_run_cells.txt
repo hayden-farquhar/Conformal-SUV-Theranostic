@@ -1,0 +1,423 @@
+================================================================================
+Phase 2 Colab cells -- copy each block into a separate Colab cell, in order.
+
+Pre-reg: https://doi.org/10.17605/OSF.IO/4KAZN sec 3.5
+Amendment 6: 2026-04-29 (osf/amendment_log.md sec 6a + 6b)
+
+Architecture (no-sync project):
+  Local: code, small artefacts, OSF docs (NOT auto-synced to Drive)
+  Drive: large data (DICOMs, NIfTIs, segmentations); Phase 2 outputs go here
+  Colab: ephemeral runtime; pulls code via uploaded zip; reads/writes Drive
+  Local <- Drive: only the small Phase 2 OUTPUTS come back at the end (for OSF)
+
+Plan:
+  Cell 0: BEFORE OPENING COLAB, run locally:
+              python3 scripts/build_colab_code_zip.py
+          Produces ~/Downloads/p79_code.zip (~150 KB).
+          Drag-and-drop the zip into the Colab Files panel after Cell 1.
+
+  Cell 1: Mount Drive
+  Cell 2: Unzip the uploaded code into /content/p79
+          (Option B alternative documented inside Cell 2.)
+  Cell 3: Install Python deps not pre-installed on Colab
+  Cell 4: Preflight -- check input availability for both cohorts
+  Cell 5: (CONDITIONAL) Regenerate SUV NIfTIs for AutoPET-III subsample series
+          flagged 'needs_suv_regen' by Cell 4.
+  Cell 6: Smoke test -- run primary driver with --limit 2; verify output schema.
+  Cell 7: Production primary run (50 AutoPET-III series; ~3-5 hours wall time).
+  Cell 8: Production sensitivity run (92 AutoPET-I patients; ~2-3 hours).
+  Cell 9: SA-28 between-substitution comparison (KS + Bland-Altman).
+  Cell 10: Stage outputs on Drive ready for pull-back to local.
+  Cell 11: (LOCAL, after Colab) Pull just the small artefacts back, then
+           OSF upload from local.
+
+ALL cells use a single DATA_ROOT constant -- if your Drive layout differs,
+change once at the top of Cell 4.
+================================================================================
+
+
+# ===== Cell 1: Mount Drive =====
+from google.colab import drive
+drive.mount('/content/drive')
+import os
+print('Drive mounted:', os.path.exists('/content/drive/MyDrive'))
+
+# After this cell runs, drag-and-drop p79_code.zip from your local Downloads
+# into the Colab Files panel (left sidebar). Then run Cell 2.
+
+
+# ===== Cell 2: Unzip the uploaded code into Colab =====
+# Default: Option A (zip-and-upload). Drag p79_code.zip into the Files panel
+# after Cell 1, then run this cell.
+#
+# Option B (rsync code-only Drive mirror): if you push src/ + scripts/ + tests/ +
+# results/tables/ to a Drive folder (e.g. /MyDrive/P79 Code), set the constants
+# below and the cell will pull from Drive instead.
+
+import os, sys, shutil, zipfile
+
+USE_DRIVE_MIRROR = False                              # flip True to use Option B
+DRIVE_MIRROR_PATH = '/content/drive/MyDrive/P79 Code'
+ZIP_PATH = '/content/p79_code.zip'                    # default Files-panel upload location
+COLAB_REPO = '/content/p79'
+
+if os.path.exists(COLAB_REPO):
+    shutil.rmtree(COLAB_REPO)
+
+if USE_DRIVE_MIRROR:
+    assert os.path.exists(DRIVE_MIRROR_PATH), f'Drive mirror not found at {DRIVE_MIRROR_PATH}'
+    shutil.copytree(DRIVE_MIRROR_PATH, COLAB_REPO)
+    print(f'Repo synced from Drive mirror into {COLAB_REPO}')
+else:
+    assert os.path.exists(ZIP_PATH), (
+        f'Upload p79_code.zip via the Files panel first, then re-run this cell. '
+        f'(Expected at {ZIP_PATH}.)'
+    )
+    os.makedirs(COLAB_REPO, exist_ok=True)
+    with zipfile.ZipFile(ZIP_PATH, 'r') as zf:
+        zf.extractall(COLAB_REPO)
+    print(f'Repo unzipped into {COLAB_REPO}')
+
+os.chdir(COLAB_REPO)
+sys.path.insert(0, COLAB_REPO)
+
+# Smoke-test imports
+from src.testretest.defaults import autopet_i_defaults_for_patient
+sample = autopet_i_defaults_for_patient(75.0)
+print('Imports OK. Sample params for 75kg patient:')
+print(f'  injected_dose:    {sample.injected_dose_bq:.3e} Bq')
+print(f'  decay_factor:     {sample.decay_factor:.4f}')
+print(f'  frame_duration:   {sample.frame_duration_sec:.1f} s')
+
+
+# ===== Cell 3: Install dependencies =====
+# Colab pre-installs numpy, pandas, scipy, nibabel, openpyxl. SimpleITK and
+# pydicom are NOT pre-installed (verified 2026-04-29 -- the SUV regen path
+# fails with "'NoneType' object has no attribute 'dcmread'" if pydicom is missing
+# because src/preprocess/suv_conversion.py guards the import).
+
+!pip install --quiet SimpleITK pyarrow pydicom
+
+
+# ===== Cell 4: Preflight =====
+DATA_ROOT = '/content/drive/MyDrive/P79 Data'
+OUT_DIR = f'{DATA_ROOT}/phase2'
+
+!mkdir -p "{OUT_DIR}"
+!python scripts/phase2_preflight.py \
+    --autopet-iii-suv-dir "{DATA_ROOT}/autopet_iii/paired_inputs" \
+    --autopet-iii-seg-dir "{DATA_ROOT}/autopet_iii/segmentations" \
+    --autopet-iii-dicom-dir "{DATA_ROOT}/autopet_iii" \
+    --autopet-i-suv-dir "{DATA_ROOT}/autopet_i/extracted" \
+    --autopet-i-seg-dir "{DATA_ROOT}/autopet_i/extracted" \
+    --out-dir "{OUT_DIR}"
+
+# Inspect the preflight result
+import pandas as pd, json
+with open(f'{OUT_DIR}/phase2_preflight_summary.json') as f:
+    print(json.dumps(json.load(f), indent=2))
+
+
+# ===== Cell 4b: Inspect AutoPET-III Drive layout =====
+# Diagnostic cell -- run if Cell 4 reports DICOM present = 0 (i.e., the
+# preflight's assumed path autopet_iii/dicom/{series_uid}/ doesn't exist).
+# Probes a few candidate paths for the first 3 BLOCKED series so we can fix
+# the preflight + driver to point at the actual layout.
+
+import os
+import pandas as pd
+
+ROOT = '/content/drive/MyDrive/P79 Data/autopet_iii'
+
+print('Top-level entries (first 20):')
+entries = sorted(os.listdir(ROOT))[:20]
+for e in entries:
+    full = os.path.join(ROOT, e)
+    kind = 'DIR' if os.path.isdir(full) else 'FILE'
+    sz = os.path.getsize(full) if not os.path.isdir(full) else ''
+    print(f'  {kind}  {e}  {sz}')
+print(f'... ({len(os.listdir(ROOT))} total)')
+
+pre = pd.read_csv('/content/drive/MyDrive/P79 Data/phase2/phase2_preflight_autopet_iii.csv')
+blocked = pre[pre['blocked']].head(3)
+
+print()
+print('--- Where is data for the first 3 BLOCKED series? ---')
+for _, r in blocked.iterrows():
+    suid = r['series_uid']
+    print(f'\n  {suid}')
+    for cand in [
+        f'{ROOT}/{suid}',
+        f'{ROOT}/{suid}.zip',
+        f'{ROOT}/dicom/{suid}',
+        f'{ROOT}/{r["case_id"]}/{suid}',
+        f'{ROOT}/{r["case_id"]}',
+    ]:
+        if os.path.exists(cand):
+            kind = 'DIR' if os.path.isdir(cand) else 'FILE'
+            sz = '' if os.path.isdir(cand) else f'{os.path.getsize(cand):,} bytes'
+            n = len(os.listdir(cand)) if os.path.isdir(cand) else ''
+            print(f'    FOUND ({kind}): {cand}  {sz}  n_entries={n}')
+        else:
+            print(f'    -          {cand}')
+
+
+# ===== Cell 5 (CONDITIONAL): Regenerate SUV NIfTIs for AutoPET-III subsample =====
+# Only run if Cell 4 reported needs_suv_regen > 0.
+# Per series: (i) unzip DICOM if zipped-but-not-extracted, (ii) extract per-series
+# PETMetadata from any DICOM slice, (iii) regenerate paired SUV NIfTI from DICOM
+# via the §3.3-validated suv_conversion pipeline.
+
+import os, zipfile, glob
+import pandas as pd
+from pathlib import Path
+import SimpleITK as sitk
+from src.preprocess.suv_conversion import dicom_series_to_suv_sitk, extract_pet_metadata
+
+PRE_CSV = f'{OUT_DIR}/phase2_preflight_autopet_iii.csv'
+SUV_OUT_DIR = Path(f'{DATA_ROOT}/autopet_iii/paired_inputs')
+SUV_OUT_DIR.mkdir(parents=True, exist_ok=True)
+
+pre = pd.read_csv(PRE_CSV)
+todo = pre[pre['needs_suv_regen']]
+print(f'{len(todo)} series need SUV regen')
+print()
+
+n_unzipped = 0
+n_regen = 0
+n_failed = 0
+
+for i, (_, r) in enumerate(todo.iterrows(), 1):
+    series_uid = r['series_uid']
+    dicom_dir = Path(r['dicom_dir'])
+    dicom_zip = Path(r['dicom_zip'])
+    out = SUV_OUT_DIR / f'{series_uid}_0001.nii.gz'
+
+    if out.exists():
+        print(f'[{i}/{len(todo)}] {series_uid[:40]}... -- SUV already exists, skipping')
+        continue
+
+    # Step 1: ensure DICOM is extracted (unzip if needed)
+    if not dicom_dir.exists():
+        if dicom_zip.exists():
+            print(f'[{i}/{len(todo)}] {series_uid[:40]}... -- unzipping {dicom_zip.stat().st_size/1024/1024:.1f} MB')
+            try:
+                dicom_dir.mkdir(parents=True, exist_ok=True)
+                with zipfile.ZipFile(dicom_zip, 'r') as zf:
+                    zf.extractall(dicom_dir)
+                # Some zips wrap content in a sub-directory; flatten if so
+                inside = list(dicom_dir.iterdir())
+                if len(inside) == 1 and inside[0].is_dir():
+                    nested = inside[0]
+                    for f in nested.iterdir():
+                        f.rename(dicom_dir / f.name)
+                    nested.rmdir()
+                n_unzipped += 1
+            except Exception as e:
+                print(f'    UNZIP FAILED: {e}')
+                n_failed += 1
+                continue
+        else:
+            print(f'[{i}/{len(todo)}] {series_uid[:40]}... -- no DICOM dir or zip; skipping')
+            n_failed += 1
+            continue
+
+    # Step 2: extract PETMetadata + run SUV regen via §3.3-validated pipeline
+    try:
+        # Find any DICOM slice in the series for metadata extraction
+        dcm_candidates = sorted(dicom_dir.glob('*.dcm'))
+        if not dcm_candidates:
+            # some Drive layouts have no .dcm extension; fall back to any file
+            dcm_candidates = sorted(p for p in dicom_dir.iterdir() if p.is_file())
+        if not dcm_candidates:
+            raise FileNotFoundError(f'no DICOM files in {dicom_dir}')
+        meta = extract_pet_metadata(str(dcm_candidates[0]))
+
+        suv_image = dicom_series_to_suv_sitk(str(dicom_dir), meta)
+        sitk.WriteImage(suv_image, str(out))
+        print(f'[{i}/{len(todo)}] {series_uid[:40]}... -- wrote SUV')
+        n_regen += 1
+    except Exception as e:
+        print(f'[{i}/{len(todo)}] {series_uid[:40]}... -- SUV REGEN FAILED: {e}')
+        n_failed += 1
+
+print()
+print(f'Done: {n_regen} SUV regenerated, {n_unzipped} DICOMs unzipped, {n_failed} failed.')
+
+# Re-run preflight to confirm
+print()
+print('=== Re-running preflight ===')
+!python scripts/phase2_preflight.py \
+    --autopet-iii-suv-dir "{DATA_ROOT}/autopet_iii/paired_inputs" \
+    --autopet-iii-seg-dir "{DATA_ROOT}/autopet_iii/segmentations" \
+    --autopet-iii-dicom-dir "{DATA_ROOT}/autopet_iii" \
+    --autopet-i-suv-dir "{DATA_ROOT}/autopet_i/extracted" \
+    --autopet-i-seg-dir "{DATA_ROOT}/autopet_i/extracted" \
+    --out-dir "{OUT_DIR}"
+
+
+# ===== Cell 6: Smoke test (2 cases) =====
+# Verify the driver produces sensible output BEFORE the long run.
+# Output goes to a separate prefix so the smoke test doesn't pollute production.
+
+OUT_PREFIX_SMOKE = f'{OUT_DIR}/phase2_smoke_test'
+
+!python scripts/run_phase2_poisson_reference.py \
+    --mode autopet_iii_primary \
+    --suv-dir "{DATA_ROOT}/autopet_iii/paired_inputs" \
+    --seg-dir "{DATA_ROOT}/autopet_iii/segmentations" \
+    --dicom-dir "{DATA_ROOT}/autopet_iii" \
+    --out-prefix "{OUT_PREFIX_SMOKE}" \
+    --limit 2
+
+# Inspect smoke output
+import pandas as pd
+reps = pd.read_parquet(f'{OUT_PREFIX_SMOKE}_replicates.parquet')
+wcv = pd.read_parquet(f'{OUT_PREFIX_SMOKE}_wcv.parquet')
+print('Replicate trace shape:', reps.shape)
+print(reps.head(8))
+print()
+print('wCV summary shape:', wcv.shape)
+print(wcv[['case_id','lesion_id','dose_fraction','wcv_suvmax_pct',
+           'wcv_suvpeak_pct','wcv_suvmean_pct']].head(10))
+# Sanity: wCV at 0.10 dose should typically exceed wCV at 0.50 dose (more noise)
+# (this is per-lesion, not always strict, but should be the trend)
+
+
+# ===== Cell 7: Primary production run (50 AutoPET-III series) =====
+# Resumes automatically if Colab disconnects. Wall time estimate: 3-5 hours.
+
+OUT_PREFIX_PRIMARY = f'{OUT_DIR}/phase2_autopet_iii_primary'
+
+!python scripts/run_phase2_poisson_reference.py \
+    --mode autopet_iii_primary \
+    --suv-dir "{DATA_ROOT}/autopet_iii/paired_inputs" \
+    --seg-dir "{DATA_ROOT}/autopet_iii/segmentations" \
+    --dicom-dir "{DATA_ROOT}/autopet_iii" \
+    --out-prefix "{OUT_PREFIX_PRIMARY}"
+
+# Quick health check after completion
+import pandas as pd
+wcv = pd.read_parquet(f'{OUT_PREFIX_PRIMARY}_wcv.parquet')
+print('Primary wCV: cases =', wcv['case_id'].nunique(),
+      ', lesion-doses =', len(wcv))
+print(wcv.groupby('dose_fraction')[['wcv_suvmax_pct','wcv_suvpeak_pct','wcv_suvmean_pct']]
+      .median().to_string())
+
+
+# ===== Cell 8: Sensitivity run (92 AutoPET-I patients) =====
+# Wall time estimate: 2-3 hours.
+# AutoPET-I clinical_metadata.csv is optional -- if absent, all patients use
+# the cohort fallback weight (75 kg) per Amendment 6.
+
+OUT_PREFIX_SENS = f'{OUT_DIR}/phase2_autopet_i_sensitivity'
+CLINICAL_CSV = f'{DATA_ROOT}/autopet_i/clinical_metadata.csv'
+
+import os
+clinical_arg = f'--clinical-csv "{CLINICAL_CSV}"' if os.path.exists(CLINICAL_CSV) else ''
+
+!python scripts/run_phase2_poisson_reference.py \
+    --mode autopet_i_sensitivity \
+    --suv-dir "{DATA_ROOT}/autopet_i/extracted" \
+    --seg-dir "{DATA_ROOT}/autopet_i/extracted" \
+    {clinical_arg} \
+    --out-prefix "{OUT_PREFIX_SENS}"
+
+import pandas as pd
+wcv_s = pd.read_parquet(f'{OUT_PREFIX_SENS}_wcv.parquet')
+print('Sensitivity wCV: cases =', wcv_s['case_id'].nunique(),
+      ', lesion-doses =', len(wcv_s))
+print(wcv_s.groupby('dose_fraction')[['wcv_suvmax_pct','wcv_suvpeak_pct','wcv_suvmean_pct']]
+      .median().to_string())
+
+
+# ===== Cell 9: SA-28 between-substitution validation =====
+OUT_PREFIX_VAL = f'{OUT_DIR}/phase2_sa28'
+
+!python scripts/run_phase2_validation.py \
+    --primary-wcv "{OUT_PREFIX_PRIMARY}_wcv.parquet" \
+    --sensitivity-wcv "{OUT_PREFIX_SENS}_wcv.parquet" \
+    --out-prefix "{OUT_PREFIX_VAL}"
+
+# Display the markdown report inline
+print(open(f'{OUT_PREFIX_VAL}_comparison.md').read())
+
+
+# ===== Cell 10: Stage Phase 2 outputs on Drive ready for pull-back =====
+# Two output tiers:
+#   small (pulled back to local for OSF upload):
+#     - *_wcv.parquet   (50-100 KB each)
+#     - *_comparison.{csv,md}
+#   large (stays on Drive only; not version-pinned on OSF):
+#     - *_replicates.parquet (10-100 MB depending on lesion count)
+#     The replicate trace is reproducible from the wCV summary + driver code,
+#     so it doesn't need to be on OSF.
+
+import shutil, os, hashlib
+
+STAGE_SMALL = f'{OUT_DIR}/osf_stage'    # comes back to local
+STAGE_LARGE = f'{OUT_DIR}/drive_only'   # stays on Drive
+os.makedirs(STAGE_SMALL, exist_ok=True)
+os.makedirs(STAGE_LARGE, exist_ok=True)
+
+SMALL = [
+    (f'{OUT_PREFIX_PRIMARY}_wcv.parquet',  'phase2_autopet_iii_primary_wcv.parquet'),
+    (f'{OUT_PREFIX_SENS}_wcv.parquet',     'phase2_autopet_i_sensitivity_wcv.parquet'),
+    (f'{OUT_PREFIX_VAL}_comparison.csv',   'phase2_sa28_comparison.csv'),
+    (f'{OUT_PREFIX_VAL}_comparison.md',    'phase2_sa28_comparison.md'),
+]
+LARGE = [
+    (f'{OUT_PREFIX_PRIMARY}_replicates.parquet', 'phase2_autopet_iii_primary_replicates.parquet'),
+    (f'{OUT_PREFIX_SENS}_replicates.parquet',    'phase2_autopet_i_sensitivity_replicates.parquet'),
+]
+
+def _sha256(p):
+    h = hashlib.sha256()
+    with open(p, 'rb') as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b''):
+            h.update(chunk)
+    return h.hexdigest()
+
+def _stage(items, dst_dir, label):
+    print(f'--- {label} ---')
+    for src, name in items:
+        if not os.path.exists(src):
+            print(f'  MISSING: {src}'); continue
+        dst = os.path.join(dst_dir, name)
+        shutil.copy(src, dst)
+        sz = os.path.getsize(dst); sha = _sha256(dst)
+        print(f'  {name}  {sz:>12,} bytes  SHA-256 {sha}')
+
+_stage(SMALL, STAGE_SMALL, 'small artefacts (pull back to local for OSF):')
+_stage(LARGE, STAGE_LARGE, 'large artefacts (Drive-only; reproducible from wCV + code):')
+
+print()
+print(f'Pull these back to local with Cell 11 (run on your Mac, not Colab):')
+print(f'  Drive source: {STAGE_SMALL}')
+
+
+# ===== Cell 11: (RUN LOCALLY ON YOUR MAC, NOT COLAB) =====
+# After Phase 2 finishes on Colab, pull just the small artefacts back to local
+# so the OSF upload script can version-pin them.
+#
+# Two ways to access Drive from local Mac:
+#   A) Google Drive for desktop is mounted (e.g., /Volumes/GoogleDrive or
+#      ~/Library/CloudStorage/GoogleDrive-...). Use cp/rsync directly.
+#   B) Drive is NOT mounted locally. Either:
+#        (i)  Mount it via Drive for desktop, OR
+#        (ii) Download the four files via the Drive web UI into local
+#             data/processed/.
+#
+# The pull-back helper script handles (A) automatically by globbing common
+# Google Drive desktop mount points:
+
+# In a local terminal (NOT Colab):
+#   cd "<local_repo>"
+#   python3 scripts/pull_phase2_outputs_from_drive.py
+#
+# Then upload to OSF:
+#   python3 scripts/osf_upload_admin_artefacts.py --token-file ~/.osf_token_p79 \
+#       --files data/processed/phase2_autopet_iii_primary_wcv.parquet \
+#               data/processed/phase2_autopet_i_sensitivity_wcv.parquet \
+#               data/processed/phase2_sa28_comparison.csv \
+#               data/processed/phase2_sa28_comparison.md

@@ -1,0 +1,5 @@
+hypothesis,scope,verdict,max_abs_miss_pp
+H13,WCP-image marginal coverage on external cohorts (±2pp),FAIL,9.834710743801656
+H14,WCP-image per-centre coverage on HECKTOR (±5pp; n>=30),FAIL,23.870967741935488
+H15,WCP-extended marginal coverage on external cohorts (±2pp; conditional on Green/Amber support diagnostic),NOT_TESTED (support violation; Red diagnostic),9.834710743801656
+SA-31,Per-cohort split recalibration marginal coverage (±2pp),PASS,1.5617651127403542
