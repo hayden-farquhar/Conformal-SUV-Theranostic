@@ -15,7 +15,7 @@ Three jobs in one Colab session:
            (497 series, mostly Drive I/O bound).
 
   Cell C:  Augment AutoPET-I parquet. Reads existing parquet + FDAT zip
-           (pre-staged locally per P80 §1.5 pattern). ~30-60 min (I/O bound).
+           (pre-staged locally per the parallel project pattern). ~30-60 min (I/O bound).
 
 Each cell writes its augmented parquet to a NEW path so we don't overwrite the
 original until you've sanity-checked the output. After all three pass:
@@ -116,7 +116,7 @@ from src.preprocess.hecktor_vendor import lookup_centre
 DATA_ROOT = 'HECKTOR 2025 Training Data Defaced ALL/'
 EHR_MEMBER = f'{DATA_ROOT}HECKTOR_2025_Training_EHR_with_Data_Dictionary.xlsx'
 
-OUT_DIR_HEK = '/content/drive/MyDrive/P79 Data/hecktor'
+OUT_DIR_HEK = f'{WORK_DIR}/hecktor'
 os.makedirs(OUT_DIR_HEK, exist_ok=True)
 OUT_PARQUET_HEK = f'{OUT_DIR_HEK}/hecktor_lesions_v2.parquet'   # NEW path; v2 = schema-complete
 
@@ -220,7 +220,7 @@ if result.returncode != 0:
 #      (present if you used a code zip rebuilt 2026-04-30 or later)
 #   2. /content/autopet_iii_lesions_reviewed.parquet
 #      (present if you dragged the file directly into the Colab Files panel)
-#   3. /content/drive/MyDrive/P79 Data/autopet_iii/autopet_iii_lesions_reviewed.parquet
+#   3. {WORK_DIR}/autopet_iii/autopet_iii_lesions_reviewed.parquet
 #      (present only if a previous Colab session wrote it back to Drive)
 import time, os
 import pandas as pd
@@ -232,7 +232,7 @@ from src.features.augment_lesion_features import augment_case
 CANDIDATE_PARQUETS = [
     '/content/p79/data/interim/lesion_tables/autopet_iii_lesions_reviewed.parquet',
     '/content/autopet_iii_lesions_reviewed.parquet',
-    '/content/drive/MyDrive/P79 Data/autopet_iii/autopet_iii_lesions_reviewed.parquet',
+    f'{WORK_DIR}/autopet_iii/autopet_iii_lesions_reviewed.parquet',
 ]
 AUTOPET_III_LESIONS_IN = next((p for p in CANDIDATE_PARQUETS if os.path.exists(p)), None)
 assert AUTOPET_III_LESIONS_IN, (
@@ -242,8 +242,8 @@ assert AUTOPET_III_LESIONS_IN, (
 )
 print(f'Using parquet: {AUTOPET_III_LESIONS_IN}')
 
-AUTOPET_III_SEG_DIR     = '/content/drive/MyDrive/P79 Data/autopet_iii/segmentations'
-AUTOPET_III_LESIONS_OUT = '/content/drive/MyDrive/P79 Data/autopet_iii/autopet_iii_lesions_reviewed_v2.parquet'
+AUTOPET_III_SEG_DIR     = f'{WORK_DIR}/autopet_iii/segmentations'
+AUTOPET_III_LESIONS_OUT = f'{WORK_DIR}/autopet_iii/autopet_iii_lesions_reviewed_v2.parquet'
 assert os.path.exists(AUTOPET_III_SEG_DIR), f'SEG dir missing: {AUTOPET_III_SEG_DIR}'
 
 df = pd.read_parquet(AUTOPET_III_LESIONS_IN)
@@ -316,7 +316,7 @@ print(f'Wrote {AUTOPET_III_LESIONS_OUT}')
 import shutil, os
 from pathlib import Path
 
-DRIVE_ZIP_FDAT = Path('/content/drive/MyDrive/P79 Data/autopet_i/fdg-pet-ct-lesions.zip')
+DRIVE_ZIP_FDAT = Path(f'{WORK_DIR}/autopet_i/fdg-pet-ct-lesions.zip')
 LOCAL_ZIP_FDAT = Path('/content/fdg-pet-ct-lesions.zip')
 
 assert DRIVE_ZIP_FDAT.exists(), f'AutoPET-I FDAT zip not on Drive at {DRIVE_ZIP_FDAT}'
@@ -370,14 +370,14 @@ import nibabel as nib
 
 from src.features.augment_lesion_features import augment_case
 
-AUTOPET_I_LESIONS_OUT = '/content/drive/MyDrive/P79 Data/autopet_i/lesion_features_v3.parquet'
+AUTOPET_I_LESIONS_OUT = f'{WORK_DIR}/autopet_i/lesion_features_v3.parquet'
 
 # Resolve input parquet from any of these (priority order):
-#   1. /content/drive/MyDrive/P79 Data/autopet_i/lesion_features_v2.parquet  (Drive)
+#   1. {WORK_DIR}/autopet_i/lesion_features_v2.parquet  (Drive)
 #   2. /content/p79/data/interim/lesion_tables/autopet_i_lesions.parquet  (rebuilt zip 2026-04-30+)
 #   3. /content/autopet_i_lesions.parquet  (dragged in via Files panel)
 CANDIDATE_PARQUETS_I = [
-    '/content/drive/MyDrive/P79 Data/autopet_i/lesion_features_v2.parquet',
+    f'{WORK_DIR}/autopet_i/lesion_features_v2.parquet',
     '/content/p79/data/interim/lesion_tables/autopet_i_lesions.parquet',
     '/content/autopet_i_lesions.parquet',
 ]
@@ -474,7 +474,7 @@ print(f'Wrote {AUTOPET_I_LESIONS_OUT}')
 
 import shutil, hashlib, os
 
-STAGE = '/content/drive/MyDrive/P79 Data/augment_stage'
+STAGE = f'{WORK_DIR}/augment_stage'
 os.makedirs(STAGE, exist_ok=True)
 
 def _sha256(p):

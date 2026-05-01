@@ -2,9 +2,8 @@
 
 Provides:
 - `load_dicom_series`: zip-or-directory loader for DICOM series stored on
-  Google Drive (or any path) with two heterogeneous storage formats coexisting.
-  Used by both AutoPET-III segmentation (P79) and any cross-project pipeline
-  reusing the same Drive layout (e.g. P80 PET FM Probe).
+  any local or networked filesystem with two heterogeneous storage formats
+  coexisting (loose DICOM directory vs. zipped archive).
 - `read_ct_as_hu_sitk`: read a CT DICOM directory into a SimpleITK image in HU.
 - `resample_to_reference`: resample a moving image (typically CT) onto the grid
   of a reference image (typically PET/SUV).

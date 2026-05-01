@@ -1,24 +1,28 @@
-"""Phase 2 Colab preflight check (Amendment 6, both cohorts).
+"""Phase 2 preflight check (Amendment 6, both cohorts).
 
-Walks the Drive-mounted directories and reports per-input availability for
-the AutoPET-III primary subsample (50 series) and the AutoPET-I sensitivity
+Walks the data directories and reports per-input availability for the
+AutoPET-III primary subsample (50 series) and the AutoPET-I sensitivity
 calibration cohort (92 patients). Catches missing SUV / SEG / DICOM before
-any expensive run kicks off, so we don't burn an hour of Colab time on a
-trivially-fixable layout problem.
+any expensive run kicks off.
 
 Outputs:
     {OUT_DIR}/phase2_preflight_autopet_iii.csv
     {OUT_DIR}/phase2_preflight_autopet_i.csv
     {OUT_DIR}/phase2_preflight_summary.json
 
-Usage on Colab:
-    !python scripts/phase2_preflight.py \\
-        --autopet-iii-suv-dir "/content/drive/MyDrive/P79 Data/autopet_iii/paired_inputs" \\
-        --autopet-iii-seg-dir "/content/drive/MyDrive/P79 Data/autopet_iii/segmentations" \\
-        --autopet-iii-dicom-dir "/content/drive/MyDrive/P79 Data/autopet_iii/dicom" \\
-        --autopet-i-suv-dir "/content/drive/MyDrive/P79 Data/autopet_i/extracted" \\
-        --autopet-i-seg-dir "/content/drive/MyDrive/P79 Data/autopet_i/extracted" \\
-        --out-dir "/content/drive/MyDrive/P79 Data/phase2"
+Usage:
+    python scripts/phase2_preflight.py \\
+        --autopet-iii-suv-dir   "$WORK_DIR/autopet_iii/paired_inputs" \\
+        --autopet-iii-seg-dir   "$WORK_DIR/autopet_iii/segmentations" \\
+        --autopet-iii-dicom-dir "$WORK_DIR/autopet_iii/dicom" \\
+        --autopet-i-suv-dir     "$WORK_DIR/autopet_i/extracted" \\
+        --autopet-i-seg-dir     "$WORK_DIR/autopet_i/extracted" \\
+        --out-dir               "$WORK_DIR/phase2"
+
+`$WORK_DIR` is whatever local or networked directory holds the raw cohort
+data (DICOM / SUV NIfTI / SEG NIfTI). On Colab the conventional choice is
+the mounted Google Drive root; locally, any directory with sufficient disk
+space works.
 """
 from __future__ import annotations
 

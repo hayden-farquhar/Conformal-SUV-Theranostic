@@ -36,8 +36,10 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_OUT_DIR = PROJECT_ROOT / "results/tables/section_3_9_validation"
 DEFAULT_VALIDATION_KEY = DEFAULT_OUT_DIR / "sample_key.csv"
 
+# Default lookup paths for the AutoPET-III lesion parquet; pass --parquet to
+# override (e.g. when running against a custom working directory).
 PARQUET_CANDIDATES = [
-    "/content/drive/MyDrive/P79 Data/autopet_iii/autopet_iii_lesions.parquet",
+    str(PROJECT_ROOT / "data/interim/lesion_tables/autopet_iii_lesions_reviewed.parquet"),
     str(PROJECT_ROOT / "data/interim/lesion_tables/autopet_iii_lesions.parquet"),
 ]
 

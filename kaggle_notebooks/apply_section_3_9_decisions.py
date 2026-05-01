@@ -11,12 +11,26 @@ that downstream conformal calibration should use).
 Run on Colab after uploading section_3_9_review_decisions.csv to Drive.
 """
 
+
+# Working-directory configuration:
+# Set the WORK_DIR environment variable to point at the local or networked
+# folder that holds the raw cohort data (DICOM / SUV NIfTI / SEG NIfTI).
+# Default is `<repo_root>/work_dir`; on Colab the conventional choice is
+# the mounted Google Drive root (e.g. /content/drive/MyDrive/<your-folder>).
+import os as _os
+from pathlib import Path as _Path
+WORK_DIR = _os.environ.get(
+    "WORK_DIR",
+    str(_Path(__file__).resolve().parent.parent / "work_dir") if "__file__" in globals()
+    else "/content/work_dir",
+)
+
 import os
 import pandas as pd
 
-DECISIONS_CSV = '/content/drive/MyDrive/P79 Data/autopet_i/section_3_9_review/section_3_9_review_decisions.csv'
-INPUT_PARQUET = '/content/drive/MyDrive/P79 Data/autopet_i/lesion_features_v2.parquet'
-OUTPUT_PARQUET = '/content/drive/MyDrive/P79 Data/autopet_i/lesion_features_reviewed.parquet'
+DECISIONS_CSV = f'{WORK_DIR}/autopet_i/section_3_9_review/section_3_9_review_decisions.csv'
+INPUT_PARQUET = f'{WORK_DIR}/autopet_i/lesion_features_v2.parquet'
+OUTPUT_PARQUET = f'{WORK_DIR}/autopet_i/lesion_features_reviewed.parquet'
 
 assert os.path.exists(DECISIONS_CSV), 'Upload section_3_9_review_decisions.csv to ' + DECISIONS_CSV + ' first'
 assert os.path.exists(INPUT_PARQUET), 'lesion_features_v2.parquet not found at ' + INPUT_PARQUET

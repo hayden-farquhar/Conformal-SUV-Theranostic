@@ -1,10 +1,10 @@
-"""Phase 3 diagnostic analysis (Path C, 2026-04-30).
+"""Phase 3 diagnostic analysis.
 
 Read-only diagnostic script that re-uses the Phase 3 driver's load + train +
 calibrate logic to produce diagnostic artefacts WITHOUT writing to the locked
 Phase 3 outputs. Goal: localise the under-coverage failure pattern surfaced
-in the dry-run (H1/H11/H12 FAIL with 8-9pp marginal miss on external cohorts)
-to inform commit-vs-amendment decision.
+in the four-mode comparison (H1/H11/H12 FAIL with 8-9pp marginal miss on
+external cohorts).
 
 Diagnostics produced:
 
@@ -25,9 +25,7 @@ Diagnostics produced:
   4. Centre × vendor coverage heatmap (HECKTOR only): is the centre-level
      miss vendor-correlated, sample-size-correlated, or independent?
 
-  5. P80 corroboration: GTVp/GTVn coverage ratio for HECKTOR alongside the
-     P80 patch-classification GTVp/GTVn pattern (D16) for cross-project
-     manuscript framing.
+  5. GTVp/GTVn coverage ratio for HECKTOR (per-class anatomical asymmetry).
 
 Outputs:
     results/phase3/diagnostics/
@@ -248,8 +246,8 @@ def main() -> None:
     cv_cov.to_csv(OUT_DIR / "centre_vendor_coverage.csv", index=False)
     print(cv_cov.to_string(index=False))
 
-    # ===== Diagnostic 5: GTVp/GTVn cross-project corroboration =====
-    print("\n--- Diagnostic 5: HECKTOR GTVp/GTVn coverage (P80 D16 corroboration) ---")
+    # ===== Diagnostic 5: GTVp/GTVn per-class coverage =====
+    print("\n--- Diagnostic 5: HECKTOR GTVp/GTVn per-class coverage ---")
     cls_cov = (
         hek_rec.groupby("lesion_class", observed=True)
         .agg(
@@ -343,7 +341,7 @@ def main() -> None:
         "",
         cv_cov.to_markdown(index=False),
         "",
-        "## 4. HECKTOR GTVp/GTVn coverage (cross-project corroboration with P80 D16)",
+        "## 4. HECKTOR GTVp/GTVn per-class coverage",
         "",
         cls_cov.to_markdown(index=False),
         "",

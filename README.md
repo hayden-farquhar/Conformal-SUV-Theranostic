@@ -1,10 +1,13 @@
 # Cross-Cohort Calibration of Conformal Prediction for Lesion-Level SUV Quantification in Theranostic PET
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.19936563.svg)](https://doi.org/10.5281/zenodo.19936563)
+
 Reproducibility code for the accompanying manuscript:
 
 > **Cross-Cohort Calibration of Conformal Prediction for Lesion-Level SUV Quantification in Theranostic PET: A Three-Cohort External-Validation Study with Per-Cohort Recalibration.** Hayden Farquhar (Independent researcher; ORCID [0009-0002-6226-440X](https://orcid.org/0009-0002-6226-440X)).
 
 - **Pre-registration:** OSF [10.17605/OSF.IO/4KAZN](https://doi.org/10.17605/OSF.IO/4KAZN) (twelve amendments on component j5ry4)
+- **Concept DOI (all versions):** [10.5281/zenodo.19936563](https://doi.org/10.5281/zenodo.19936563) — always resolves to the latest tagged release
 - **Preprint:** to be posted
 
 ## Overview
@@ -46,6 +49,25 @@ pip install -r requirements-frozen.txt
 
 Approximate disk requirements: 2.5 MB for the repository, plus ~5 GB if you
 materialise the raw DICOM archives on disk for full preprocessing.
+
+## Working directory (`WORK_DIR`)
+
+The bundled lesion parquets cover the analysis chain end-to-end without any
+external data. The preprocessing notebooks under `kaggle_notebooks/` pull
+raw DICOM and segmentation NIfTI from the upstream cohorts and write
+intermediate artefacts to a configurable `WORK_DIR`:
+
+```bash
+# default (locally): <repo>/work_dir
+export WORK_DIR="$PWD/work_dir"
+
+# or, on Colab with Drive mounted:
+export WORK_DIR="/content/drive/MyDrive/<your-data-folder>"
+```
+
+Every preprocessing notebook starts with a configuration cell that reads
+`WORK_DIR` from the environment and falls back to a sensible default. Set
+it once and the rest of the chain is self-contained.
 
 ## Reproduction
 
@@ -192,17 +214,20 @@ tests across these modules.
 
 ## Citation
 
-If you use this code, please cite the accompanying manuscript (citation
-to be added once a preprint DOI is minted) and the OSF pre-registration:
+If you use this code, please cite both the accompanying manuscript (citation
+to be added once a preprint DOI is minted) and the Zenodo software archive:
 
 ```
 Farquhar, H. Cross-Cohort Calibration of Conformal Prediction for
 Lesion-Level SUV Quantification in Theranostic PET: A Three-Cohort
 External-Validation Study with Per-Cohort Recalibration.
 Pre-registration: https://doi.org/10.17605/OSF.IO/4KAZN
+Code archive: https://doi.org/10.5281/zenodo.19936563
 ```
 
-This repository will receive a Zenodo DOI on first tagged release.
+The Zenodo concept DOI [10.5281/zenodo.19936563](https://doi.org/10.5281/zenodo.19936563)
+always resolves to the latest tagged release; specific release versions have
+their own version DOIs visible on the Zenodo record page.
 
 ## License
 

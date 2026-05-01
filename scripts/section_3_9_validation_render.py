@@ -16,15 +16,15 @@ Pre-registration: https://doi.org/10.17605/OSF.IO/4KAZN (Amendment 5)
 
 Usage
 -----
-    # On Colab, in a fresh CPU notebook with Drive mounted:
-    %cd /content
-    !git clone <project-or-just-upload-the-file>     # or upload manually
-    !pip install -q pydicom SimpleITK nibabel scipy matplotlib
-    !python scripts/section_3_9_validation_render.py \
-        --key /content/drive/MyDrive/P79\\ Data/autopet_iii/sample_key.csv \
-        --drive-root /content/drive/MyDrive/P79\\ Data/autopet_iii \
-        --suv-module /content/suv_conversion.py \
-        --out /content/drive/MyDrive/P79\\ Data/autopet_iii/section_3_9_validation_pngs
+    # `$WORK_DIR` is whatever local or networked directory holds the raw
+    # AutoPET-III cohort data; on Colab the conventional choice is the
+    # mounted Google Drive root.
+    pip install -q pydicom SimpleITK nibabel scipy matplotlib
+    python scripts/section_3_9_validation_render.py \\
+        --key        "$WORK_DIR/autopet_iii/sample_key.csv" \\
+        --drive-root "$WORK_DIR/autopet_iii" \\
+        --suv-module src/preprocess/suv_conversion.py \\
+        --out        "$WORK_DIR/autopet_iii/section_3_9_validation_pngs"
 """
 
 from __future__ import annotations

@@ -38,7 +38,7 @@ MIN_LESION_VOLUME_ML = 1.0
 GT_SOFTMAX_MEAN = 1.0
 GT_SOFTMAX_ENTROPY = 0.0
 
-# lesion_class encoding (matches P80 schema)
+# lesion_class encoding (matches the HECKTOR challenge label scheme)
 LESION_CLASS_GTVP = 1
 LESION_CLASS_GTVN = 2
 LESION_CLASS_MIXED = 3

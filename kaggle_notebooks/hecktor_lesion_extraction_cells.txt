@@ -1,5 +1,5 @@
 ================================================================================
-HECKTOR P79 lesion-extraction cells (Amendment 8 implementation, 2026-04-30)
+HECKTOR lesion-extraction cells (Amendment 8 implementation, 2026-04-30)
 
 Pre-reg: https://doi.org/10.17605/OSF.IO/4KAZN
 Amendment 8: osf/amendment_log.md (OSF j5ry4 amendment_log.md v9, SHA 2ad1c920...)
@@ -12,10 +12,10 @@ Outputs:
 Architecture:
   Local: code (already in p79_code.zip), Amendment 8 in osf/amendment_log.md
   Drive: HECKTOR 2025 zip at /MyDrive/HECKTOR 2025/hecktor_2025_training_defaced.zip
-         (P80 acquired 2026-04-29; SHA 1abcf1d9...)
-  Colab: ephemeral runtime; pre-stages zip locally per P80 §1.5 pattern
+         (acquired 2026-04-29; SHA 1abcf1d9...)
+  Colab: ephemeral runtime; pre-stages zip locally per the parallel project pattern
 
-NOTE: P80's preprocessing produces 96^3 patches for FM probing; P79's downstream
+NOTE: the parallel preprocessing pipeline produces 96^3 patches for FM probing; the downstream conformal evaluation
 schema is per-lesion features. Same source data, independent OUTPUT artefacts
 on OSF. Per Amendment 8 §8b, lesion def = connected components on binary seg
 (GTVp ∪ GTVn merged), one row per ≥1 mL component, lesion_class via voxel-
@@ -70,7 +70,7 @@ for cid, (name, vendor) in HECKTOR_CENTRE_VENDOR.items():
 
 
 # ===== Cell 4: Stage HECKTOR zip locally =====
-# Cribbed from P80 §1.5: Drive FUSE I/O is 5-10x slower than local SSD; pre-stage once
+# Drive FUSE I/O is 5-10x slower than local SSD; pre-stage once
 # saves ~15-30 min on a 30-60 min extraction job. Idempotent + SHA-verified.
 
 import os, shutil, hashlib
@@ -78,7 +78,7 @@ from pathlib import Path
 
 DRIVE_ZIP = Path('/content/drive/MyDrive/HECKTOR 2025/hecktor_2025_training_defaced.zip')
 LOCAL_ZIP = Path('/content/hecktor_2025_training_defaced.zip')
-EXPECTED_SHA = '1abcf1d9'  # P80 receipt; full hash logged in P80 PROGRESS.md
+EXPECTED_SHA = '1abcf1d9'  # expected SHA; full hash logged in the parallel project's notes
 
 assert DRIVE_ZIP.exists(), f'HECKTOR zip not on Drive at {DRIVE_ZIP}'
 
@@ -93,7 +93,7 @@ def stage_zip_locally():
     if LOCAL_ZIP.exists():
         sha = _file_sha256(LOCAL_ZIP)
         if sha.startswith(EXPECTED_SHA):
-            print(f'Local zip exists and matches P80 receipt prefix {EXPECTED_SHA}; reusing')
+            print(f'Local zip exists and matches expected SHA prefix {EXPECTED_SHA}; reusing')
             return LOCAL_ZIP
         print(f'Local zip exists but SHA {sha[:16]}... does NOT match {EXPECTED_SHA}; re-staging')
         LOCAL_ZIP.unlink()
@@ -105,9 +105,9 @@ def stage_zip_locally():
     shutil.copy2(DRIVE_ZIP, LOCAL_ZIP)
     sha = _file_sha256(LOCAL_ZIP)
     print(f'Local zip SHA-256 (full): {sha}')
-    print(f'P80 receipt prefix: {EXPECTED_SHA}')
+    print(f'expected SHA prefix: {EXPECTED_SHA}')
     if not sha.startswith(EXPECTED_SHA):
-        print(f'WARNING: SHA does not match P80 receipt prefix; verify before proceeding')
+        print(f'WARNING: SHA does not match expected SHA prefix; verify before proceeding')
     return LOCAL_ZIP
 
 ZIP_PATH = stage_zip_locally()
@@ -132,7 +132,7 @@ with zipfile.ZipFile(ZIP_PATH) as zf:
 print(f'EHR rows: {len(ehr)}')
 print(f'EHR columns: {ehr.columns.tolist()}')
 
-# Cohort = Task1==1 OR Task2==1 (P80 schema)
+# Cohort = Task1==1 OR Task2==1 (challenge schema)
 cohort = ehr[(ehr['Task 1'] == 1) | (ehr['Task 2'] == 1)].copy()
 cohort['task1_patient'] = (cohort['Task 1'] == 1).astype(bool)
 cohort['task2_patient'] = (cohort['Task 2'] == 1).astype(bool)
@@ -182,7 +182,7 @@ def read_nifti_from_zip(zf, member_name):
 
 
 def resample_seg_to_pt(seg_img, pt_img):
-    """SEG -> PT grid via NN (P80 D4 finding: SEG and PT come on different grids)."""
+    """SEG -> PT grid via NN ( SEG and PT come on different grids)."""
     rs = sitk.ResampleImageFilter()
     rs.SetReferenceImage(pt_img)
     rs.SetInterpolator(sitk.sitkNearestNeighbor)
@@ -256,7 +256,7 @@ import json
 import pandas as pd
 import zipfile
 
-OUT_DIR = '/content/drive/MyDrive/P79 Data/hecktor'
+OUT_DIR = f'{WORK_DIR}/hecktor'
 import os
 os.makedirs(OUT_DIR, exist_ok=True)
 

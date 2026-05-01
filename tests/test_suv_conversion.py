@@ -363,7 +363,7 @@ def _expected_suv(raw: float, slope: float, intercept: float = 0.0,
 class TestDicomSeriesToSuvSitkIntegration:
     """Synthetic-DICOM regression tests for the rescale-applied-twice and
     per-slice-rescale-ignored bugs caught during pre-reg §3.3 validation
-    (Amendment 3, 2026-04-26). Use a tmpdir per test for isolation."""
+    (Amendment 3 on OSF/4KAZN). Use a tmpdir per test for isolation."""
 
     def setup_method(self):
         self.tmpdir = tempfile.mkdtemp(prefix="test_suv_dcm_")
@@ -403,8 +403,11 @@ class TestDicomSeriesToSuvSitkIntegration:
     def test_no_double_rescale(self):
         """REGRESSION: rescale must be applied exactly once.
 
-        Pre-2026-04-26 bug: GDCM applied rescale during sitk read; compute_suv_bw
-        applied it again; SUV was inflated by ~slope× (Siemens slope=7.4 -> 640%).
+        Earlier implementations let GDCM apply rescale during the SimpleITK read
+        and then compute_suv_bw applied it again, inflating SUV by ~slope× (for
+        a Siemens slope of 7.4 this yielded ~640% over-estimation). This test
+        guards against the regression by explicitly checking that the doubled
+        application would produce a numerically distinct value.
         """
         slope = 7.4
         meta = self._build_series([slope, slope, slope], raw_value=10)
@@ -421,9 +424,10 @@ class TestDicomSeriesToSuvSitkIntegration:
     def test_per_slice_variable_rescale_handled(self):
         """REGRESSION: each slice's RescaleSlope must drive its own SUV.
 
-        Pre-2026-04-26 bug: meta.rescale_slope was a scalar from the first slice
-        and applied to the whole 3D volume, ignoring per-slice variation common
-        on Siemens scanners.
+        Earlier implementations stored meta.rescale_slope as a scalar from the
+        first slice and applied it to the whole 3D volume, ignoring the
+        per-slice variation that is common on Siemens scanners. This test
+        guards against the regression.
         """
         slopes = [0.5, 2.0, 10.0]
         meta = self._build_series(slopes, raw_value=1000)

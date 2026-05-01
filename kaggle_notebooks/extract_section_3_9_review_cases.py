@@ -9,9 +9,23 @@ For each unique case (4 cases), extracts:
   - SEG.nii.gz  (lesion segmentation mask)
   - CTres.nii.gz  (resampled CT, if present in zip — gives anatomic context)
 
-Outputs go to /content/drive/MyDrive/P79 Data/autopet_i/section_3_9_review/
+Outputs go to {WORK_DIR}/autopet_i/section_3_9_review/
 plus a navigation manifest CSV + a decision-tracking template CSV.
 """
+
+
+# Working-directory configuration:
+# Set the WORK_DIR environment variable to point at the local or networked
+# folder that holds the raw cohort data (DICOM / SUV NIfTI / SEG NIfTI).
+# Default is `<repo_root>/work_dir`; on Colab the conventional choice is
+# the mounted Google Drive root (e.g. /content/drive/MyDrive/<your-folder>).
+import os as _os
+from pathlib import Path as _Path
+WORK_DIR = _os.environ.get(
+    "WORK_DIR",
+    str(_Path(__file__).resolve().parent.parent / "work_dir") if "__file__" in globals()
+    else "/content/work_dir",
+)
 
 import os
 import zipfile
@@ -19,10 +33,10 @@ import shutil
 import pandas as pd
 import numpy as np
 
-ZIP_PATH = '/content/drive/MyDrive/P79 Data/autopet_i/fdg-pet-ct-lesions.zip'
-LESION_PARQUET = '/content/drive/MyDrive/P79 Data/autopet_i/lesion_features_v2.parquet'
-REVIEW_CSV = '/content/drive/MyDrive/P79 Data/autopet_i/suv_outlier_review.csv'
-OUT_DIR = '/content/drive/MyDrive/P79 Data/autopet_i/section_3_9_review'
+ZIP_PATH = f'{WORK_DIR}/autopet_i/fdg-pet-ct-lesions.zip'
+LESION_PARQUET = f'{WORK_DIR}/autopet_i/lesion_features_v2.parquet'
+REVIEW_CSV = f'{WORK_DIR}/autopet_i/suv_outlier_review.csv'
+OUT_DIR = f'{WORK_DIR}/autopet_i/section_3_9_review'
 
 os.makedirs(OUT_DIR, exist_ok=True)
 

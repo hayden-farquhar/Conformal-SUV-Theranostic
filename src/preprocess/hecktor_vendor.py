@@ -24,14 +24,14 @@ from __future__ import annotations
 # `None` for unverified centres -- those are flagged at extraction time and
 # fall through to the "Unknown" vendor with a logged warning.
 HECKTOR_CENTRE_VENDOR = {
-    # Integer-encoded CenterID per EHR (P80 D3 finding: column 'CenterID' uses
-    # integer codes, NOT letter-prefix codes). Mapping below pairs the integer
-    # code to the centre name reported in HECKTOR challenge papers and the
-    # dominant scanner vendor for that centre.
+    # Integer-encoded CenterID per the HECKTOR challenge EHR (the CenterID
+    # column uses integer codes, NOT letter-prefix codes). Mapping below pairs
+    # the integer code to the centre name reported in HECKTOR challenge papers
+    # and the dominant scanner vendor for that centre.
     1: ("CHUM",  "GE"),       # Centre Hospitalier de l'Universite de Montreal
     2: ("CHUS",  "Philips"),  # CHU Sherbrooke
     3: ("CHUP",  "Siemens"),  # CHU Poitiers (or CHUS depending on HECKTOR cohort version)
-    # 4: gap in the EHR per P80 enumeration -- not present in defaced training release
+    # 4: gap in the EHR enumeration -- not present in the defaced training release
     5: ("MDA",   "GE"),       # MD Anderson Cancer Center -- dominant centre (~58-61%)
     6: ("CHUV",  "Siemens"),  # CHU Vaudois (Lausanne)
     7: ("USZ",   "GE"),       # University Hospital Zurich

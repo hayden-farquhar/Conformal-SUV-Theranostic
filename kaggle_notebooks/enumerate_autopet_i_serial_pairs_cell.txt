@@ -2,7 +2,7 @@ import os, zipfile
 from collections import defaultdict
 from datetime import datetime, timedelta
 
-ZIP_PATH = '/content/drive/MyDrive/P79 Data/autopet_i/fdg-pet-ct-lesions.zip'
+ZIP_PATH = f'{WORK_DIR}/autopet_i/fdg-pet-ct-lesions.zip'
 MAX_INTERVAL_WEEKS = 8
 
 with zipfile.ZipFile(ZIP_PATH, 'r') as zf:

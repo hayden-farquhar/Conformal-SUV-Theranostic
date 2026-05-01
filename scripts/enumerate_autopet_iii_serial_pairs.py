@@ -1,10 +1,10 @@
 """Enumerate AutoPET-III same-patient serial PT pair counts (§3.5 gate).
 
-Pre-reg §3.5 reads "stable-disease pairs from AutoPET" without restricting cohort.
-The earlier (2026-04-28) gate decision counted AutoPET-I pairs only and concluded
-zero in-window pairs. The P80 handoff later that day surfaced that AutoPET-III has
-substantial multi-series structure (135 of 333 cohort patients have >=2 PT series),
-which the earlier gate did not enumerate. This script closes that audit gap.
+Pre-reg §3.5 reads "stable-disease pairs from AutoPET" without restricting
+cohort. An earlier gate decision counted AutoPET-I pairs only and concluded
+zero in-window pairs; AutoPET-III has substantial multi-series structure
+(135 of 333 cohort patients have >=2 PT series) that this script enumerates
+to complete the §3.5 gate.
 
 Inputs:
   - data/interim/lesion_tables/autopet_iii_lesions_reviewed.parquet (cohort: 333 pts / 497 series)
@@ -57,9 +57,8 @@ def parse_studydate(s: str) -> datetime | None:
 
 
 def canonicalise_radionuclide(r: str | float | None) -> str:
-    """Two encoding variants for Ga-68 in the parquet (per PROGRESS.md 2026-04-28).
-
-    Collapse them so radionuclide-matched grouping works.
+    """Collapse the multiple Ga-68 / F-18 encoding variants found in the parquet
+    so that radionuclide-matched grouping works without spurious mismatches.
     """
     if not isinstance(r, str):
         return "UNK"

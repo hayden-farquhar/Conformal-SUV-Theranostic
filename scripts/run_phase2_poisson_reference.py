@@ -12,24 +12,29 @@ Two cohort modes (Amendment 6 sec 6a):
 
     --mode autopet_iii_primary
         Subsample manifest: results/tables/section_3_5_phase2_autopet_iii_subsample.csv
-        SUV NIfTI dir:      <Drive>/P79 Data/autopet_iii/paired_inputs/{series_uid}_0001.nii.gz
-        SEG NIfTI dir:      <Drive>/P79 Data/autopet_iii/segmentations/{series_uid}.nii.gz
-        DICOM dir:          <Drive>/P79 Data/autopet_iii/dicom/{series_uid}/
+        SUV NIfTI dir:      $WORK_DIR/autopet_iii/paired_inputs/{series_uid}_0001.nii.gz
+        SEG NIfTI dir:      $WORK_DIR/autopet_iii/segmentations/{series_uid}.nii.gz
+        DICOM dir:          $WORK_DIR/autopet_iii/dicom/{series_uid}/
         Acquisition params: extracted per series from DICOM (`src.preprocess.suv_conversion`)
 
     --mode autopet_i_sensitivity
         Cohort manifest: data/processed/autopet_i_splits.parquet (split=='calibration')
-        SUV NIfTI dir:   <Drive>/P79 Data/autopet_i/extracted/{patient_id}/{study_date}/SUV.nii.gz
-        SEG NIfTI dir:   <Drive>/P79 Data/autopet_i/extracted/{patient_id}/{study_date}/SEG.nii.gz
+        SUV NIfTI dir:   $WORK_DIR/autopet_i/extracted/{patient_id}/{study_date}/SUV.nii.gz
+        SEG NIfTI dir:   $WORK_DIR/autopet_i/extracted/{patient_id}/{study_date}/SEG.nii.gz
         Acquisition params: AutoPET-I literature defaults
                             (`src.testretest.defaults.autopet_i_defaults_for_patient`)
                             with per-patient weight from clinical_metadata.csv if available.
 
-Resume support: rows already written to {OUT_PREFIX}_replicates.parquet are skipped
-on re-run, so long Colab sessions can pick up after a disconnection.
+`$WORK_DIR` is whatever local or networked directory holds the raw cohort
+data (DICOM / SUV NIfTI / SEG NIfTI). On Colab the conventional choice is
+the mounted Google Drive root; locally, any directory with sufficient disk
+space works. Pass the resolved paths to the corresponding CLI flags.
+
+Resume support: rows already written to {OUT_PREFIX}_replicates.parquet are
+skipped on re-run, so long sessions can pick up after a disconnection.
 
 Pre-registration: https://doi.org/10.17605/OSF.IO/4KAZN sec 3.5
-Amendment 6: 2026-04-29
+Amendment 6.
 """
 from __future__ import annotations
 

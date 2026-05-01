@@ -806,8 +806,8 @@ Notes: AutoPET-I lesion count after pre-registered ≥1 mL filter and Amendment-
                "tumour volume; voxel-majority class assignment per Amendment 8 section 8b. SA-29 tolerance is "
                "+/- 3pp. The GTVp arm passes; the GTVn arm fails substantially. Mechanism: typical lymph nodes "
                "are smaller and lower-uptake than primary tumours, shifting the residual distribution beyond "
-               "what the AutoPET-I calibration q_hat covers. This per-class asymmetry corroborates P80's "
-               "independent finding on the same cohort and motivates per-class quantile heads in future work.\n")
+               "what the AutoPET-I calibration q_hat covers. The per-class asymmetry motivates per-class "
+               "quantile heads in future work.\n")
     else:
         t7 += "| (no per-class strata in freeze) | | | | | | |\n"
     (TABLE_DIR / "table07_per_class_coverage.md").write_text(t7)

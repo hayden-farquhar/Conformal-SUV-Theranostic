@@ -1,4 +1,4 @@
-"""Unit tests for the HECKTOR P79 lesion-extraction module (Amendment 8)."""
+"""Unit tests for the HECKTOR lesion-extraction module (Amendment 8)."""
 
 from __future__ import annotations
 
