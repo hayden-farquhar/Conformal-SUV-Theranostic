@@ -1,7 +1,7 @@
 {
   "title": "Cross-Cohort Calibration of Conformal Prediction for Lesion-Level SUV Quantification in Theranostic PET — Analysis Code",
   "upload_type": "software",
-  "description": "Reproducibility code for the accompanying manuscript on cross-cohort calibration of conformal prediction for lesion-level SUVmax quantification in theranostic PET. Includes the conformal prediction infrastructure (split conformalised quantile regression, weighted conformal prediction with image-only and extended categorical features, support-overlap diagnostic, per-cohort split conformal recalibration, Calibration Shift Index), the Phase 2 within-replicate coefficient-of-variation reference pipeline, the Phase 3 four-mode evaluation driver, post-freeze sensitivity analyses (per-cohort recalibration seed sensitivity; back-transformed interval widths in natural-SUV units), and the locked Phase 3 input parquets for AutoPET-I, AutoPET-III, and HECKTOR 2025. Pre-registration: OSF/4KAZN with twelve amendments.",
+  "description": "Reproducibility code for the accompanying manuscript on cross-cohort calibration of conformal prediction for lesion-level SUVmax quantification in theranostic PET. Includes the conformal prediction infrastructure (split conformalised quantile regression, weighted conformal prediction with image-only and extended categorical features, support-overlap diagnostic, per-cohort split conformal recalibration, Calibration Shift Index), the Phase 2 within-replicate coefficient-of-variation reference pipeline, the Phase 3 four-mode evaluation driver, post-freeze sensitivity analyses, and the locked Phase 3 input parquets for AutoPET-I, AutoPET-III, and HECKTOR 2025. Pre-registration: OSF/4KAZN with twelve amendments.",
   "creators": [
     {
       "name": "Farquhar, Hayden",
@@ -24,28 +24,23 @@
     "AutoPET",
     "HECKTOR",
     "reproducibility",
-    "pre-registration",
-    "TRIPOD-AI",
-    "CLAIM"
+    "pre-registration"
   ],
   "related_identifiers": [
     {
       "identifier": "10.17605/OSF.IO/4KAZN",
       "relation": "isSupplementTo",
-      "scheme": "doi",
-      "resource_type": "publication-preregistration"
+      "scheme": "doi"
     },
     {
       "identifier": "10.57754/FDAT.wf9fy-txq84",
       "relation": "references",
-      "scheme": "doi",
-      "resource_type": "dataset"
+      "scheme": "doi"
     },
     {
       "identifier": "10.7937/R7EP-3X37",
       "relation": "references",
-      "scheme": "doi",
-      "resource_type": "dataset"
+      "scheme": "doi"
     }
   ]
 }
